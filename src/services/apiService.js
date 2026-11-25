@@ -62,12 +62,18 @@ async function apiRequest(path, { method = 'GET', body, token, allowRefresh = tr
   }
 
   const contentType = response.headers.get('content-type') || '';
-  const data = contentType.includes('application/json')
+  const isJson = contentType.includes('application/json');
+  const data = isJson
     ? await response.json().catch(() => null)
     : null;
 
   if (!response.ok) {
-    if ([502, 503, 504].includes(response.status) || (!data && response.status >= 500)) {
+    if (
+      [502, 503, 504].includes(response.status) ||
+      (!data && response.status >= 500) ||
+      (!isJson && [404, 405].includes(response.status)) ||
+      (response.status === 405 && !data?.detail)
+    ) {
       const proxyErr = new Error('Backend proxy unavailable');
       proxyErr.isNetworkError = true;
       proxyErr.status = response.status;
@@ -76,6 +82,13 @@ async function apiRequest(path, { method = 'GET', body, token, allowRefresh = tr
     const err = new Error(data?.detail || data?.message || `Request failed (${response.status})`);
     err.status = response.status;
     throw err;
+  }
+
+  if (response.status !== 204 && !isJson) {
+    const htmlErr = new Error('Backend API unavailable');
+    htmlErr.isNetworkError = true;
+    htmlErr.status = response.status;
+    throw htmlErr;
   }
 
   return data;
@@ -91,7 +104,16 @@ export const apiService = {
   resetPassword: (email) => apiRequest('/api/auth/reset-password', { method: 'POST', body: { email } }),
   updateProfile: (fields, token) => apiRequest('/api/auth/profile', { method: 'PATCH', body: fields, token }),
 
+  getAdminOverview: (token) => apiRequest('/api/admin/overview', { token }),
   listAdminUsers: (token) => apiRequest('/api/admin/users', { token }),
+  createAdminUser: (payload, token) =>
+    apiRequest('/api/admin/users', { method: 'POST', body: payload, token }),
+  updateAdminUserRole: (userId, role, token) =>
+    apiRequest(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
+      method: 'PATCH',
+      body: { role },
+      token
+    }),
   setAdminUserActive: (userId, active, token) =>
     apiRequest(`/api/admin/users/${encodeURIComponent(userId)}/active`, {
       method: 'PATCH',
@@ -103,6 +125,35 @@ export const apiService = {
       method: 'DELETE',
       token
     }),
+  listAdminPosts: (token) => apiRequest('/api/admin/posts', { token }),
+  deleteAdminPost: (postId, token) =>
+    apiRequest(`/api/admin/posts/${encodeURIComponent(postId)}`, {
+      method: 'DELETE',
+      token
+    }),
+  deleteAdminComment: (commentId, token) =>
+    apiRequest(`/api/admin/comments/${encodeURIComponent(commentId)}`, {
+      method: 'DELETE',
+      token
+    }),
+  listAdminStories: (token) => apiRequest('/api/admin/stories', { token }),
+  deleteAdminStory: (storyId, token) =>
+    apiRequest(`/api/admin/stories/${encodeURIComponent(storyId)}`, {
+      method: 'DELETE',
+      token
+    }),
+  listAdminEvents: (token) => apiRequest('/api/admin/events', { token }),
+  createAdminEvent: (payload, token) =>
+    apiRequest('/api/admin/events', { method: 'POST', body: payload, token }),
+  deleteAdminEvent: (eventId, token) =>
+    apiRequest(`/api/admin/events/${encodeURIComponent(eventId)}`, {
+      method: 'DELETE',
+      token
+    }),
+  broadcastAdminAnnouncement: (payload, token) =>
+    apiRequest('/api/admin/announcements', { method: 'POST', body: payload, token }),
+  getAdminAuditLogs: (limit = 50, token) =>
+    apiRequest(`/api/admin/audit-logs?limit=${encodeURIComponent(limit)}`, { token }),
 
   getState: (token) => apiRequest('/api/state', { token }),
   getFeed: (mode, token) => apiRequest(`/api/feed?mode=${encodeURIComponent(mode)}`, { token }),

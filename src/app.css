@@ -92,8 +92,9 @@ textarea {
   position: relative;
   z-index: 10;
   min-height: 100vh;
-  padding: 44px clamp(18px, 5vw, 72px);
+  padding: 36px clamp(16px, 4vw, 56px);
   color: #f4f4f5;
+  max-width: 1280px;
 }
 
 .admin-header,
@@ -102,12 +103,11 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
 }
 
 .admin-header {
-  max-width: 1180px;
-  margin: 0 auto 34px;
+  margin: 0 auto 24px;
 }
 
 .admin-header h1,
@@ -130,35 +130,60 @@ textarea {
 
 .admin-identity {
   color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.35);
 }
 
-.admin-content {
+.admin-nav {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 12px;
+}
+
+.admin-nav .nav-link {
+  color: #cbd5e1;
+  background: rgba(24, 24, 28, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-nav .nav-link:hover {
+  color: #fff;
+  border-color: rgba(99, 102, 241, 0.45);
+}
+
+.admin-nav .nav-link.active {
+  background: linear-gradient(135deg, #4f46e5, #0284c7);
+  border-color: transparent;
+  color: #fff;
+}
+
+.admin-kpi-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 230px) minmax(0, 1fr);
-  gap: 20px;
-  max-width: 1180px;
-  margin: 0 auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .admin-stat-card,
-.admin-users-card {
-  padding: 22px;
-  border: 1px solid rgba(255, 255, 255, .1);
+.admin-users-card,
+.admin-panel {
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 18px;
-  background: rgba(17, 17, 20, .84);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, .28);
+  background: rgba(17, 17, 20, 0.86);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
 }
 
 .admin-stat-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  align-self: start;
+  gap: 6px;
 }
 
 .admin-stat-card strong {
-  font-size: 38px;
-  line-height: 1;
+  font-size: 32px;
+  line-height: 1.05;
 }
 
 .admin-eyebrow {
@@ -166,71 +191,170 @@ textarea {
   color: #a5b4fc;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: .08em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.admin-search {
-  width: min(280px, 100%);
+.admin-search,
+.admin-select,
+.admin-select-inline,
+.admin-textarea {
   min-height: 40px;
-  padding: 0 12px;
   border: 1px solid #2e2e3a;
   border-radius: 10px;
   background: #18181c;
   color: #f4f4f5;
 }
 
+.admin-search {
+  width: min(280px, 100%);
+  padding: 0 12px;
+}
+
+.admin-select-inline {
+  min-height: 32px;
+  width: auto;
+  font-size: 12px;
+}
+
+.admin-textarea {
+  min-height: 96px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.admin-create-panel {
+  padding: 16px;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 14px;
+  background: rgba(24, 24, 32, 0.72);
+}
+
+.admin-bulk-bar {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
 .admin-user-list {
   display: grid;
-  gap: 10px;
-  margin-top: 22px;
+  gap: 6px;
+  margin-top: 14px;
 }
 
 .admin-user-row {
-  padding: 14px 0;
-  border-top: 1px solid rgba(255, 255, 255, .08);
+  padding: 14px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .admin-user-details {
   display: grid;
-  gap: 4px;
-  min-width: 180px;
-  flex: 1;
+  gap: 3px;
+  min-width: 160px;
 }
 
 .admin-status {
   min-width: 78px;
-  color: #86efac;
-}
-
-.admin-status.inactive {
-  color: #fca5a5;
 }
 
 .admin-delete-button {
-  min-height: 38px;
-  padding: 8px 14px;
-  border: 1px solid rgba(248, 113, 113, .35);
-  border-radius: 11px;
-  background: rgba(127, 29, 29, .2);
-  color: #fca5a5;
-  font-size: 13px;
+  border-radius: 10px;
+  font-size: 12px;
   font-weight: 600;
-}
-
-.admin-delete-button:hover {
-  background: rgba(127, 29, 29, .4);
 }
 
 .admin-empty-state {
   padding: 26px 0 8px;
 }
 
-@media (max-width: 800px) {
-  .admin-content {
-    grid-template-columns: 1fr;
-  }
+.admin-activity-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 12px;
+}
 
+.admin-meter {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  appearance: none;
+  border: none;
+  background: #1e1e26;
+}
+
+.admin-meter::-webkit-progress-bar {
+  background: #1e1e26;
+  border-radius: 999px;
+}
+
+.admin-meter::-webkit-progress-value {
+  background: linear-gradient(90deg, #6366f1, #38bdf8);
+  border-radius: 999px;
+}
+
+.admin-meter::-moz-progress-bar {
+  background: linear-gradient(90deg, #6366f1, #38bdf8);
+  border-radius: 999px;
+}
+
+.admin-mono {
+  font-family: var(--font-mono);
+}
+
+.admin-mod-card {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(24, 24, 30, 0.72);
+}
+
+.admin-mod-thumb {
+  display: block;
+  width: min(320px, 100%);
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-story-thumb {
+  display: block;
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-audit-preview {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.admin-audit-table {
+  --bs-table-bg: transparent;
+  --bs-table-border-color: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 960px) {
+  .admin-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
   .admin-user-row {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -242,6 +366,10 @@ textarea {
 }
 
 @media (max-width: 560px) {
+  .admin-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
   .admin-header,
   .admin-users-toolbar {
     align-items: flex-start;
@@ -275,7 +403,10 @@ small {
   margin-bottom: 0;
 }
 
-.admin-search:focus {
+.admin-search:focus,
+.admin-select:focus,
+.admin-select-inline:focus,
+.admin-textarea:focus {
   background: #18181c;
   color: #f4f4f5;
   border-color: #6366f1;

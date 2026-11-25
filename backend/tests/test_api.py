@@ -496,3 +496,204 @@ def test_stories_notifications_media_search_and_token_lifecycle(tmp_path):
     status, _ = asgi_json(app, "GET", "/api/stories", token=new_bob_token)
     assert status == 401
 
+
+def test_admin_portal_extra_features(tmp_path):
+    app = make_test_app(tmp_path)
+
+    # Create a standard user for permission checks & notification broadcast target
+    status, member_signup = asgi_json(
+        app,
+        "POST",
+        "/api/auth/signup",
+        body={
+            "name": "Nina Patel",
+            "email": "nina@example.com",
+            "password": "Password1!",
+        },
+    )
+    assert status == 200
+    member_token = member_signup["jwt"]["accessToken"]
+
+    # Non-admin user must be blocked from extra admin routes
+    for path in (
+        "/api/admin/overview",
+        "/api/admin/posts",
+        "/api/admin/stories",
+        "/api/admin/events",
+        "/api/admin/audit-logs",
+    ):
+        s, _ = asgi_json(app, "GET", path, token=member_token)
+        assert s == 403
+    s, _ = asgi_json(
+        app,
+        "POST",
+        "/api/admin/announcements",
+        body={"message": "Unauthorized broadcast", "target": "all"},
+        token=member_token,
+    )
+    assert s == 403
+
+    # Sign in as administrator
+    status, admin_signin = asgi_json(
+        app,
+        "POST",
+        "/api/auth/signin",
+        body={
+            "email": DEMO_ADMIN_EMAIL,
+            "password": DEMO_ADMIN_PASSWORD,
+            "portal": "admin",
+        },
+    )
+    assert status == 200
+    admin_token = admin_signin["jwt"]["accessToken"]
+    admin_id = admin_signin["user"]["id"]
+
+    # Overview metrics
+    status, overview = asgi_json(app, "GET", "/api/admin/overview", token=admin_token)
+    assert status == 200
+    assert overview["metrics"]["totalUsers"] >= 2
+    assert overview["metrics"]["totalPosts"] >= 8
+    assert len(overview["recentActivity"]) == 7
+
+    # Create user + duplicate/role validation
+    status, created_user_res = asgi_json(
+        app,
+        "POST",
+        "/api/admin/users",
+        body={
+            "name": "Owen Brooks",
+            "email": "owen@example.com",
+            "password": "Password1!",
+            "role": "verified_user",
+        },
+        token=admin_token,
+    )
+    assert status == 200
+    owen_id = created_user_res["user"]["id"]
+    assert created_user_res["user"]["role"] == "verified_user"
+
+    status, _ = asgi_json(
+        app,
+        "POST",
+        "/api/admin/users",
+        body={
+            "name": "Owen Dup",
+            "email": "owen@example.com",
+            "password": "Password1!",
+            "role": "standard_user",
+        },
+        token=admin_token,
+    )
+    assert status == 409
+
+    status, _ = asgi_json(
+        app,
+        "POST",
+        "/api/admin/users",
+        body={
+            "name": "Bad Role",
+            "email": "badrole@example.com",
+            "password": "Password1!",
+            "role": "superadmin",
+        },
+        token=admin_token,
+    )
+    assert status == 400
+
+    # Role change + protected admin check
+    status, promoted = asgi_json(
+        app,
+        "PATCH",
+        f"/api/admin/users/{owen_id}/role",
+        body={"role": "moderator"},
+        token=admin_token,
+    )
+    assert status == 200 and promoted["user"]["role"] == "moderator"
+
+    status, _ = asgi_json(
+        app,
+        "PATCH",
+        f"/api/admin/users/{admin_id}/role",
+        body={"role": "moderator"},
+        token=admin_token,
+    )
+    assert status == 400
+
+    # Content moderation: list posts/comments, delete comment & post
+    status, mod_posts = asgi_json(app, "GET", "/api/admin/posts", token=admin_token)
+    assert status == 200 and len(mod_posts["posts"]) >= 8
+    target_post = mod_posts["posts"][0]
+    first_comment = mod_posts["commentsByPost"].get("p1", [])[0]
+
+    status, del_c = asgi_json(
+        app, "DELETE", f"/api/admin/comments/{first_comment['id']}", token=admin_token
+    )
+    assert status == 200 and del_c["deleted"] is True
+
+    status, del_p = asgi_json(
+        app, "DELETE", f"/api/admin/posts/{target_post['id']}", token=admin_token
+    )
+    assert status == 200 and del_p["deleted"] is True
+
+    # Stories moderation
+    status, mod_stories = asgi_json(app, "GET", "/api/admin/stories", token=admin_token)
+    assert status == 200 and len(mod_stories["stories"]) >= 1
+    first_story_id = mod_stories["stories"][0]["id"]
+    status, del_s = asgi_json(
+        app, "DELETE", f"/api/admin/stories/{first_story_id}", token=admin_token
+    )
+    assert status == 200 and del_s["deleted"] is True
+
+    # Events create & delete
+    status, created_evt = asgi_json(
+        app,
+        "POST",
+        "/api/admin/events",
+        body={
+            "title": "Admin Ops Townhall",
+            "date": "Dec 12, 2026 • 5:00 PM UTC",
+            "location": "Virtual Main Stage",
+            "tag": "Operations",
+        },
+        token=admin_token,
+    )
+    assert status == 200
+    evt_id = created_evt["event"]["id"]
+
+    status, evt_list = asgi_json(app, "GET", "/api/admin/events", token=admin_token)
+    assert status == 200 and any(e["id"] == evt_id for e in evt_list["events"])
+
+    status, del_evt = asgi_json(
+        app, "DELETE", f"/api/admin/events/{evt_id}", token=admin_token
+    )
+    assert status == 200 and del_evt["deleted"] is True
+
+    # Broadcast announcement -> delivered to member's persistent notifications
+    status, broadcast = asgi_json(
+        app,
+        "POST",
+        "/api/admin/announcements",
+        body={"message": "Scheduled maintenance tonight at 02:00 UTC.", "target": "active"},
+        token=admin_token,
+    )
+    assert status == 200 and broadcast["sentCount"] >= 2
+
+    status, member_notifs = asgi_json(app, "GET", "/api/notifications", token=member_token)
+    assert status == 200
+    assert any("Scheduled maintenance tonight" in n["action"] for n in member_notifs["notifications"])
+
+    # Audit log captures all operations
+    status, audit_res = asgi_json(app, "GET", "/api/admin/audit-logs?limit=50", token=admin_token)
+    assert status == 200
+    actions = {entry["action"] for entry in audit_res["logs"]}
+    assert {
+        "user.create",
+        "user.role_change",
+        "comment.delete",
+        "post.delete",
+        "story.delete",
+        "event.create",
+        "event.delete",
+        "announcement.broadcast",
+    }.issubset(actions)
+

@@ -378,10 +378,22 @@ def init_db(db_path: str | Path | None = None) -> None:
                 PRIMARY KEY (user_id, day)
             );
 
+            CREATE TABLE IF NOT EXISTS admin_audit_logs (
+                id TEXT PRIMARY KEY,
+                admin_id TEXT NOT NULL,
+                admin_name TEXT NOT NULL,
+                action TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                details TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_key, created_at);
             CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_stories_expires ON stories(expires_at, created_at);
+            CREATE INDEX IF NOT EXISTS idx_audit_created ON admin_audit_logs(created_at DESC);
             """
         )
         try:
@@ -905,6 +917,72 @@ def is_jti_revoked(conn: sqlite3.Connection, jti: str) -> bool:
 def fetch_activity(conn: sqlite3.Connection, user_id: str) -> dict[str, int]:
     rows = conn.execute("SELECT day, count FROM activity_log WHERE user_id = ?", (user_id,)).fetchall()
     return {r["day"]: int(r["count"]) for r in rows}
+
+
+def record_admin_audit(
+    conn: sqlite3.Connection,
+    admin: dict,
+    action: str,
+    target_type: str,
+    target_id: str,
+    details: str = "",
+) -> dict:
+    audit_id = make_id("audit")
+    now_ms = int(time.time() * 1000)
+    conn.execute(
+        """
+        INSERT INTO admin_audit_logs (
+            id, admin_id, admin_name, action, target_type, target_id, details, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            audit_id,
+            admin["id"],
+            admin["name"],
+            action,
+            target_type,
+            target_id,
+            details,
+            now_ms,
+        ),
+    )
+    return {
+        "id": audit_id,
+        "adminId": admin["id"],
+        "adminName": admin["name"],
+        "action": action,
+        "targetType": target_type,
+        "targetId": target_id,
+        "details": details,
+        "createdAt": now_ms,
+        "time": "Just now",
+        "isoTime": datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+
+def fetch_admin_audit_logs(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    now_ms = int(time.time() * 1000)
+    rows = conn.execute(
+        "SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "adminId": r["admin_id"],
+            "adminName": r["admin_name"],
+            "action": r["action"],
+            "targetType": r["target_type"],
+            "targetId": r["target_id"],
+            "details": r["details"],
+            "createdAt": int(r["created_at"]),
+            "time": format_relative_time(int(r["created_at"]), now_ms),
+            "isoTime": datetime.fromtimestamp(int(r["created_at"]) / 1000, tz=timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
+        }
+        for r in rows
+    ]
 
 
 def make_id(prefix: str) -> str:

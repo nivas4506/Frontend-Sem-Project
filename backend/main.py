@@ -8,7 +8,7 @@ import re
 import secrets
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -35,6 +35,7 @@ from .database import (
     ensure_user_seed_inbox,
     fetch_active_stories,
     fetch_activity,
+    fetch_admin_audit_logs,
     fetch_comments_map,
     fetch_events,
     fetch_following,
@@ -42,11 +43,13 @@ from .database import (
     fetch_notifications,
     fetch_posts,
     fetch_saved,
+    format_relative_time,
     get_connection,
     init_db,
     is_jti_revoked,
     make_id,
     record_activity,
+    record_admin_audit,
     revoke_access_jti,
     revoke_user_refresh_tokens,
     rotate_refresh_token,
@@ -102,6 +105,32 @@ class ProfileUpdateRequest(BaseModel):
 
 class ToggleActiveRequest(BaseModel):
     active: bool
+
+
+ALLOWED_ASSIGNABLE_ROLES = {"standard_user", "verified_user", "moderator"}
+
+
+class AdminCreateUserRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: str = "standard_user"
+
+
+class UpdateUserRoleRequest(BaseModel):
+    role: str
+
+
+class AdminCreateEventRequest(BaseModel):
+    title: str
+    date: str
+    location: str
+    tag: str = "Community"
+
+
+class AdminAnnouncementRequest(BaseModel):
+    message: str
+    target: str = "all"
 
 
 class CreatePostRequest(BaseModel):
@@ -509,6 +538,114 @@ def create_app(db_path=None) -> FastAPI:
 
         return {"user": updated_user, "jwt": create_jwt(updated_user)}
 
+    @app.get("/api/admin/overview")
+    def admin_overview(_admin: dict = Depends(_require_admin)):
+        now_ms = int(time.time() * 1000)
+        with get_connection(db_path) as conn:
+            user_rows = conn.execute("SELECT role, provider, active FROM users").fetchall()
+            total_users = len(user_rows)
+            active_users = sum(1 for r in user_rows if r["active"] == 1)
+            inactive_users = total_users - active_users
+            verified_users = sum(
+                1
+                for r in user_rows
+                if r["role"] in ("verified_user", "moderator", "admin")
+            )
+            role_breakdown: dict[str, int] = {}
+            provider_breakdown: dict[str, int] = {}
+            for r in user_rows:
+                role_key = r["role"] or "standard_user"
+                prov_key = r["provider"] or "local"
+                role_breakdown[role_key] = role_breakdown.get(role_key, 0) + 1
+                provider_breakdown[prov_key] = provider_breakdown.get(prov_key, 0) + 1
+
+            post_rows = conn.execute("SELECT base_likes, tags FROM posts").fetchall()
+            total_posts = len(post_rows)
+            extra_likes = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM post_likes"
+            ).fetchone()["cnt"]
+            total_likes = sum(int(r["base_likes"]) for r in post_rows) + int(extra_likes)
+
+            tag_counts: dict[str, int] = {}
+            for r in post_rows:
+                for tag in json.loads(r["tags"] or "[]"):
+                    cleaned = str(tag).strip()
+                    if cleaned:
+                        tag_counts[cleaned] = tag_counts.get(cleaned, 0) + 1
+            top_tags = [
+                {"tag": tag, "count": cnt}
+                for tag, cnt in sorted(
+                    tag_counts.items(), key=lambda kv: (-kv[1], kv[0])
+                )[:6]
+            ]
+
+            total_comments = int(
+                conn.execute("SELECT COUNT(*) AS cnt FROM comments").fetchone()["cnt"]
+            )
+            total_messages = int(
+                conn.execute("SELECT COUNT(*) AS cnt FROM messages").fetchone()["cnt"]
+            )
+            active_stories = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM stories WHERE expires_at > ?",
+                    (now_ms,),
+                ).fetchone()["cnt"]
+            )
+            event_rows = conn.execute("SELECT base_attendees FROM events").fetchall()
+            extra_rsvps = int(
+                conn.execute("SELECT COUNT(*) AS cnt FROM event_rsvps").fetchone()[
+                    "cnt"
+                ]
+            )
+            total_events = len(event_rows)
+            total_rsvps = sum(int(r["base_attendees"]) for r in event_rows) + extra_rsvps
+            unread_notifications = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM notifications WHERE is_read = 0"
+                ).fetchone()["cnt"]
+            )
+
+            today_utc = datetime.now(timezone.utc).date()
+            day_keys = [
+                (today_utc - timedelta(days=offset)).isoformat()
+                for offset in range(6, -1, -1)
+            ]
+            activity_rows = conn.execute(
+                "SELECT day, SUM(count) AS total FROM activity_log GROUP BY day"
+            ).fetchall()
+            activity_by_day = {r["day"]: int(r["total"]) for r in activity_rows}
+            recent_activity = [
+                {"day": day, "count": activity_by_day.get(day, 0)} for day in day_keys
+            ]
+            recent_audit_logs = fetch_admin_audit_logs(conn, limit=12)
+
+        online_users = sum(
+            1 for u in manager.active_users.values() if u.get("isOnline")
+        )
+        return {
+            "metrics": {
+                "totalUsers": total_users,
+                "activeUsers": active_users,
+                "inactiveUsers": inactive_users,
+                "verifiedUsers": verified_users,
+                "onlineUsers": online_users,
+                "connectedSockets": len(manager.socket_user_map),
+                "totalPosts": total_posts,
+                "totalComments": total_comments,
+                "totalLikes": total_likes,
+                "totalMessages": total_messages,
+                "activeStories": active_stories,
+                "totalEvents": total_events,
+                "totalRsvps": total_rsvps,
+                "unreadNotifications": unread_notifications,
+            },
+            "roleBreakdown": role_breakdown,
+            "providerBreakdown": provider_breakdown,
+            "topTags": top_tags,
+            "recentActivity": recent_activity,
+            "recentAuditLogs": recent_audit_logs,
+        }
+
     @app.get("/api/admin/users")
     def admin_list_users(_admin: dict = Depends(_require_admin)):
         with get_connection(db_path) as conn:
@@ -516,6 +653,121 @@ def create_app(db_path=None) -> FastAPI:
                 "SELECT * FROM users ORDER BY created_at DESC"
             ).fetchall()
             return {"users": [user_row_to_dict(r) for r in rows]}
+
+    @app.post("/api/admin/users")
+    def admin_create_user(
+        body: AdminCreateUserRequest, _admin: dict = Depends(_require_admin)
+    ):
+        clean_name = body.name.strip()
+        clean_email = body.email.strip().lower()
+        clean_role = body.role.strip()
+        if len(clean_name) < 2:
+            raise HTTPException(
+                status_code=400, detail="Please provide a full name (at least 2 chars)."
+            )
+        if "@" not in clean_email:
+            raise HTTPException(
+                status_code=400, detail="Please provide a valid email address."
+            )
+        if len(body.password) < 6:
+            raise HTTPException(
+                status_code=400, detail="Password must be at least 6 characters."
+            )
+        if clean_role not in ALLOWED_ASSIGNABLE_ROLES:
+            raise HTTPException(
+                status_code=400,
+                detail="Role must be standard_user, verified_user, or moderator.",
+            )
+
+        with get_connection(db_path) as conn:
+            existing = conn.execute(
+                "SELECT id FROM users WHERE lower(email) = ?", (clean_email,)
+            ).fetchone()
+            if existing is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="An account with this email already exists.",
+                )
+            user_id = f"usr_{secrets.token_hex(4)}"
+            salt, digest = hash_password(body.password)
+            handle = re.sub(r"[^a-z0-9_]", "", clean_email.split("@")[0]) or user_id
+            avatar = f"https://api.dicebear.com/7.x/bottts/svg?seed={quote(clean_email)}"
+            created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            conn.execute(
+                """
+                INSERT INTO users (
+                    id, name, email, password_hash, password_salt, username,
+                    bio, avatar, role, provider, interests, privacy, active,
+                    onboarding_completed, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 'local', '[]', 'public', 1, 1, ?)
+                """,
+                (
+                    user_id,
+                    clean_name,
+                    clean_email,
+                    digest,
+                    salt,
+                    handle,
+                    avatar,
+                    clean_role,
+                    created_at,
+                ),
+            )
+            ensure_user_seed_inbox(conn, user_id)
+            record_admin_audit(
+                conn,
+                _admin,
+                "user.create",
+                "user",
+                user_id,
+                f"Created {clean_email} ({clean_role})",
+            )
+            row = conn.execute(
+                "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            return {"user": user_row_to_dict(row)}
+
+    @app.patch("/api/admin/users/{target_id}/role")
+    def admin_update_user_role(
+        target_id: str,
+        body: UpdateUserRoleRequest,
+        _admin: dict = Depends(_require_admin),
+    ):
+        if target_id == DEMO_ADMIN_ID:
+            raise HTTPException(
+                status_code=400,
+                detail="The seeded admin account role cannot be modified.",
+            )
+        clean_role = body.role.strip()
+        if clean_role not in ALLOWED_ASSIGNABLE_ROLES:
+            raise HTTPException(
+                status_code=400,
+                detail="Role must be standard_user, verified_user, or moderator.",
+            )
+        with get_connection(db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE id = ?", (target_id,)
+            ).fetchone()
+            if row is None:
+                raise HTTPException(
+                    status_code=404, detail="User account could not be found."
+                )
+            conn.execute(
+                "UPDATE users SET role = ? WHERE id = ?",
+                (clean_role, target_id),
+            )
+            record_admin_audit(
+                conn,
+                _admin,
+                "user.role_change",
+                "user",
+                target_id,
+                f"Changed {row['email']} role to {clean_role}",
+            )
+            updated = conn.execute(
+                "SELECT * FROM users WHERE id = ?", (target_id,)
+            ).fetchone()
+            return {"user": user_row_to_dict(updated)}
 
     @app.patch("/api/admin/users/{target_id}/active")
     def admin_toggle_active(
@@ -540,6 +792,16 @@ def create_app(db_path=None) -> FastAPI:
                 "UPDATE users SET active = ? WHERE id = ?",
                 (1 if body.active else 0, target_id),
             )
+            if not body.active:
+                revoke_user_refresh_tokens(conn, target_id)
+            record_admin_audit(
+                conn,
+                _admin,
+                "user.activate" if body.active else "user.deactivate",
+                "user",
+                target_id,
+                f"Set {row['email']} active={body.active}",
+            )
             updated = conn.execute(
                 "SELECT * FROM users WHERE id = ?", (target_id,)
             ).fetchone()
@@ -552,12 +814,256 @@ def create_app(db_path=None) -> FastAPI:
                 status_code=400, detail="The seeded admin account cannot be deleted."
             )
         with get_connection(db_path) as conn:
-            cur = conn.execute("DELETE FROM users WHERE id = ?", (target_id,))
-            if cur.rowcount == 0:
+            row = conn.execute(
+                "SELECT email FROM users WHERE id = ?", (target_id,)
+            ).fetchone()
+            if row is None:
                 raise HTTPException(
                     status_code=404, detail="User account could not be found."
                 )
+            revoke_user_refresh_tokens(conn, target_id)
+            conn.execute("DELETE FROM users WHERE id = ?", (target_id,))
+            record_admin_audit(
+                conn,
+                _admin,
+                "user.delete",
+                "user",
+                target_id,
+                f"Deleted {row['email']}",
+            )
         return {"deleted": True}
+
+    @app.get("/api/admin/posts")
+    def admin_list_posts(_admin: dict = Depends(_require_admin)):
+        with get_connection(db_path) as conn:
+            return {
+                "posts": fetch_posts(conn),
+                "commentsByPost": fetch_comments_map(conn),
+            }
+
+    @app.delete("/api/admin/posts/{post_id}")
+    def admin_delete_post(post_id: str, _admin: dict = Depends(_require_admin)):
+        with get_connection(db_path) as conn:
+            row = conn.execute(
+                "SELECT author_name, content FROM posts WHERE id = ?", (post_id,)
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Post not found.")
+            conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+            snippet = (row["content"] or "")[:48]
+            record_admin_audit(
+                conn,
+                _admin,
+                "post.delete",
+                "post",
+                post_id,
+                f'Removed post by {row["author_name"]}: "{snippet}"',
+            )
+        return {"deleted": True, "postId": post_id}
+
+    @app.delete("/api/admin/comments/{comment_id}")
+    def admin_delete_comment(comment_id: str, _admin: dict = Depends(_require_admin)):
+        with get_connection(db_path) as conn:
+            row = conn.execute(
+                "SELECT author_name, content FROM comments WHERE id = ?",
+                (comment_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Comment not found.")
+            conn.execute(
+                "DELETE FROM comments WHERE id = ? OR parent_id = ?",
+                (comment_id, comment_id),
+            )
+            snippet = (row["content"] or "")[:48]
+            record_admin_audit(
+                conn,
+                _admin,
+                "comment.delete",
+                "comment",
+                comment_id,
+                f'Removed comment by {row["author_name"]}: "{snippet}"',
+            )
+        return {"deleted": True, "commentId": comment_id}
+
+    @app.get("/api/admin/stories")
+    def admin_list_stories(_admin: dict = Depends(_require_admin)):
+        now_ms = int(time.time() * 1000)
+        with get_connection(db_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM stories WHERE expires_at > ? ORDER BY created_at DESC",
+                (now_ms,),
+            ).fetchall()
+        return {
+            "stories": [
+                {
+                    "id": r["id"],
+                    "groupId": r["group_id"],
+                    "userId": r["user_id"],
+                    "userName": r["user_name"],
+                    "userHandle": r["user_handle"],
+                    "userAvatar": r["user_avatar"],
+                    "image": r["image"],
+                    "caption": r["caption"],
+                    "createdAt": int(r["created_at"]),
+                    "expiresAt": int(r["expires_at"]),
+                    "time": format_relative_time(int(r["created_at"]), now_ms),
+                }
+                for r in rows
+            ]
+        }
+
+    @app.delete("/api/admin/stories/{story_id}")
+    def admin_delete_story(story_id: str, _admin: dict = Depends(_require_admin)):
+        with get_connection(db_path) as conn:
+            row = conn.execute(
+                "SELECT user_name, caption FROM stories WHERE id = ?", (story_id,)
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Story not found.")
+            conn.execute("DELETE FROM stories WHERE id = ?", (story_id,))
+            snippet = (row["caption"] or "Media slide")[:48]
+            record_admin_audit(
+                conn,
+                _admin,
+                "story.delete",
+                "story",
+                story_id,
+                f'Removed story by {row["user_name"]}: "{snippet}"',
+            )
+        return {"deleted": True, "storyId": story_id}
+
+    @app.get("/api/admin/events")
+    def admin_list_events(_admin: dict = Depends(_require_admin)):
+        with get_connection(db_path) as conn:
+            return {"events": fetch_events(conn)}
+
+    @app.post("/api/admin/events")
+    def admin_create_event(
+        body: AdminCreateEventRequest, _admin: dict = Depends(_require_admin)
+    ):
+        title = body.title.strip()
+        date_label = body.date.strip()
+        location = body.location.strip()
+        tag = body.tag.strip() or "Community"
+        if not title or not date_label or not location:
+            raise HTTPException(
+                status_code=400,
+                detail="Title, date, and location are required for an event.",
+            )
+        event_id = make_id("evt")
+        with get_connection(db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO events (id, title, date_label, location, base_attendees, tag)
+                VALUES (?, ?, ?, ?, 1, ?)
+                """,
+                (event_id, title, date_label, location, tag),
+            )
+            record_admin_audit(
+                conn,
+                _admin,
+                "event.create",
+                "event",
+                event_id,
+                f"Published event: {title}",
+            )
+        return {
+            "event": {
+                "id": event_id,
+                "title": title,
+                "date": date_label,
+                "location": location,
+                "attendees": 1,
+                "rsvpd": False,
+                "tag": tag,
+            }
+        }
+
+    @app.delete("/api/admin/events/{event_id}")
+    def admin_delete_event(event_id: str, _admin: dict = Depends(_require_admin)):
+        with get_connection(db_path) as conn:
+            row = conn.execute(
+                "SELECT title FROM events WHERE id = ?", (event_id,)
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Event not found.")
+            conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+            record_admin_audit(
+                conn,
+                _admin,
+                "event.delete",
+                "event",
+                event_id,
+                f"Deleted event: {row['title']}",
+            )
+        return {"deleted": True, "eventId": event_id}
+
+    @app.post("/api/admin/announcements")
+    async def admin_broadcast_announcement(
+        body: AdminAnnouncementRequest, _admin: dict = Depends(_require_admin)
+    ):
+        clean_msg = body.message.strip()
+        if not clean_msg:
+            raise HTTPException(
+                status_code=400, detail="Announcement message is required."
+            )
+        if body.target not in {"all", "active"}:
+            raise HTTPException(
+                status_code=400, detail="Target must be 'all' or 'active'."
+            )
+
+        action_text = f"Announcement: {clean_msg}"
+        with get_connection(db_path) as conn:
+            if body.target == "active":
+                rows = conn.execute(
+                    "SELECT id FROM users WHERE id != ? AND active = 1",
+                    (_admin["id"],),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id FROM users WHERE id != ?",
+                    (_admin["id"],),
+                ).fetchall()
+            recipient_ids = [r["id"] for r in rows]
+            for uid in recipient_ids:
+                create_notification(conn, uid, _admin, action_text)
+            record_admin_audit(
+                conn,
+                _admin,
+                "announcement.broadcast",
+                "announcement",
+                body.target,
+                f'Broadcast to {len(recipient_ids)} {body.target} user(s): "{clean_msg[:60]}"',
+            )
+
+        for uid in recipient_ids:
+            await manager.send_to_user(
+                uid,
+                {
+                    "type": "notification:new",
+                    "notification": {
+                        "id": make_id("notif"),
+                        "userId": _admin["id"],
+                        "name": _admin["name"],
+                        "handle": _admin.get("username") or "admin",
+                        "avatar": _admin.get("avatar", ""),
+                        "action": action_text,
+                        "read": False,
+                        "time": "Just now",
+                    },
+                },
+            )
+        return {
+            "sentCount": len(recipient_ids),
+            "target": body.target,
+            "message": clean_msg,
+        }
+
+    @app.get("/api/admin/audit-logs")
+    def admin_audit_logs(limit: int = 50, _admin: dict = Depends(_require_admin)):
+        clamped = max(1, min(limit, 200))
+        with get_connection(db_path) as conn:
+            return {"logs": fetch_admin_audit_logs(conn, limit=clamped)}
 
     @app.get("/api/state")
     def get_state(user: dict = Depends(_current_user)):
