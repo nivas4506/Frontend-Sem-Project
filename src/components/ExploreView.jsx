@@ -3,19 +3,11 @@ import { Icon, Avatar } from './Icons';
 import { mediaURL } from '../utils/ui';
 import { PostCard, formatCount } from './FeedView';
 
-const TEXT_TILE_GRADIENTS = [
-  'linear-gradient(135deg, #7c3aed, #db2777)',
-  'linear-gradient(135deg, #0ea5e9, #6366f1)',
-  'linear-gradient(135deg, #f59e0b, #ef4444)',
-  'linear-gradient(135deg, #10b981, #0ea5e9)'
-];
-
 export function PostTile({ post, index = 0, featured = false, onOpen }) {
   return (
     <button
       type="button"
-      className={`explore-tile ${post.image ? '' : 'text-tile'} ${featured ? 'featured' : ''}`}
-      style={post.image ? undefined : { background: TEXT_TILE_GRADIENTS[index % TEXT_TILE_GRADIENTS.length] }}
+      className={`explore-tile ${post.image ? '' : `text-tile tile-grad-${index % 4}`} ${featured ? 'featured' : ''}`}
       onClick={() => onOpen(post.id)}
       aria-label={`Open post by ${post.author.name}`}
     >
@@ -74,7 +66,7 @@ export function ExploreView({
     <section className="explore-page">
       <div className="explore-search">
         <Icon name="search" size={18} />
-        <label className="sr-only" htmlFor="search-input">Search creators and posts</label>
+        <label className="visually-hidden" htmlFor="search-input">Search creators and posts</label>
         <input
           id="search-input"
           type="search"

@@ -271,18 +271,15 @@ small {
   color: #94a3b8;
 }
 
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+:where(.social-app, .auth-box-card, .onboarding-card, .admin-page, #app-dialog) :where(p, h1, h2, h3, h4) {
+  margin-bottom: 0;
 }
 
-.between {
-  justify-content: space-between;
-}
-
-.align-start {
-  align-items: flex-start;
+.admin-search:focus {
+  background: #18181c;
+  color: #f4f4f5;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
 }
 
 .stack {
@@ -302,23 +299,6 @@ small {
 
 .accent {
   color: #38bdf8;
-}
-
-.text-right {
-  text-align: right;
-}
-
-.full-width {
-  width: 100%;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 .field-label {
@@ -1388,6 +1368,10 @@ kbd {
   animation: storyProgress 5s linear forwards;
 }
 
+.story-progress .active i.paused {
+  animation-play-state: paused;
+}
+
 .story-head {
   position: absolute;
   top: 24px;
@@ -2412,6 +2396,11 @@ kbd {
   align-items: flex-end;
 }
 
+.tile-grad-0 { background: linear-gradient(135deg, #7c3aed, #db2777); }
+.tile-grad-1 { background: linear-gradient(135deg, #0ea5e9, #6366f1); }
+.tile-grad-2 { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+.tile-grad-3 { background: linear-gradient(135deg, #10b981, #0ea5e9); }
+
 .tile-text {
   display: flex;
   flex-direction: column;
@@ -2748,12 +2737,6 @@ kbd {
   margin-bottom: 4px;
 }
 
-.events-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
 .event-card {
   background: var(--social-surface);
   border: 1px solid var(--social-border);
@@ -2770,6 +2753,18 @@ kbd {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+}
+
+.event-banner-engineering {
+  background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+}
+
+.event-banner-design {
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+}
+
+.event-banner-default {
+  background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
 }
 
 .event-tag {
@@ -3135,6 +3130,12 @@ kbd {
 }
 
 /* Dialogs & Discussion Drawer */
+.modal-overlay {
+  z-index: 100;
+  background: rgba(3, 7, 18, 0.72);
+  backdrop-filter: blur(8px);
+}
+
 body.dialog-open {
   overflow: hidden;
 }
@@ -3435,10 +3436,6 @@ body.dialog-open {
     padding: 24px 16px;
   }
 
-  .auth-header > .row {
-    margin-left: auto;
-  }
-
   .platform-main {
     margin-left: 0;
     width: 100%;
@@ -3509,8 +3506,7 @@ body.dialog-open {
     height: 42px;
   }
 
-  .feed-sidebar,
-  .events-grid {
+  .feed-sidebar {
     grid-template-columns: minmax(0, 1fr);
   }
 

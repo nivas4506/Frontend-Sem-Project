@@ -111,7 +111,7 @@ export function AuthView({
           <img src={logoImg} alt="Platform Logo" className="brand-logo" />
           <span className="auth-brand-name">SocialConnect</span>
         </div>
-        <div className="row">
+        <div className="d-flex align-items-center gap-2 ms-auto">
           <button
             type="button"
             className="pill background-toggle"
@@ -179,7 +179,7 @@ export function AuthView({
             </p>
 
             {authError && (
-              <div id="auth-error" className="auth-error-banner" role="alert">
+              <div id="auth-error" className="alert alert-danger auth-error-banner" role="alert">
                 {authError}
               </div>
             )}
@@ -269,7 +269,7 @@ export function AuthView({
                       {calculatePasswordStrength(formData.password)}
                     </div>
                   ) : (
-                    <div className="text-right">
+                    <div className="text-end">
                       <button
                         type="button"
                         className="text-button small"

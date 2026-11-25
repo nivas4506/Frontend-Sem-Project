@@ -111,7 +111,7 @@ function StoryViewer({ stories, startIndex, onClose, onSeen }) {
 
   return (
     <div
-      className="story-viewer"
+      className="story-viewer position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
       role="dialog"
       aria-modal="true"
       aria-label={`Story from ${story.user.name}`}
@@ -123,7 +123,7 @@ function StoryViewer({ stories, startIndex, onClose, onSeen }) {
         onPointerUp={() => setPaused(false)}
         onPointerLeave={() => setPaused(false)}
       >
-        <img key={slide.image} src={slide.image} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        <img key={slide.image} src={slide.image} alt="" onError={(e) => { e.currentTarget.classList.add('d-none'); }} />
         <div className="story-shade" aria-hidden="true" />
 
         <div className="story-progress" aria-hidden="true">
@@ -132,7 +132,7 @@ function StoryViewer({ stories, startIndex, onClose, onSeen }) {
               {i === slideIdx ? (
                 <i
                   key={`${storyIdx}-${slideIdx}`}
-                  style={{ animationPlayState: paused ? 'paused' : 'running' }}
+                  className={paused ? 'paused' : ''}
                   onAnimationEnd={next}
                 />
               ) : <i />}
@@ -147,7 +147,7 @@ function StoryViewer({ stories, startIndex, onClose, onSeen }) {
           <button
             ref={closeRef}
             type="button"
-            className="story-close"
+            className="story-close rounded-circle d-inline-flex align-items-center justify-content-center"
             onClick={onClose}
             onPointerDown={(e) => e.stopPropagation()}
             aria-label="Close story"
@@ -163,11 +163,11 @@ function StoryViewer({ stories, startIndex, onClose, onSeen }) {
       </div>
 
       {storyIdx > 0 && (
-        <button type="button" className="story-nav left" onClick={prev} aria-label="Previous story">
+        <button type="button" className="story-nav left rounded-circle d-inline-flex align-items-center justify-content-center" onClick={prev} aria-label="Previous story">
           <Icon name="chevronLeft" size={22} />
         </button>
       )}
-      <button type="button" className="story-nav right" onClick={next} aria-label="Next story">
+      <button type="button" className="story-nav right rounded-circle d-inline-flex align-items-center justify-content-center" onClick={next} aria-label="Next story">
         <Icon name="chevronRight" size={22} />
       </button>
     </div>

@@ -99,7 +99,7 @@ export function PostCard({
             src={mediaURL(post.image)}
             alt={`Photo shared by ${post.author.name}`}
             loading="lazy"
-            onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
+            onError={(e) => { e.currentTarget.parentElement.classList.add('d-none'); }}
           />
           {burst && (
             <span className="like-burst" aria-hidden="true">
@@ -248,7 +248,7 @@ function Composer({ user, onCreatePost }) {
       <form onSubmit={handlePostSubmit} id="post-form">
         <div className="composer-row">
           <Avatar user={user} />
-          <label className="sr-only" htmlFor="post-composer-input">Write a post</label>
+          <label className="visually-hidden" htmlFor="post-composer-input">Write a post</label>
           <textarea
             id="post-composer-input"
             ref={textareaRef}
@@ -293,7 +293,7 @@ function Composer({ user, onCreatePost }) {
                 id="post-photo"
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif"
-                className="sr-only"
+                className="visually-hidden"
                 ref={fileInputRef}
                 onChange={handleFileChange}
               />

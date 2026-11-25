@@ -45,28 +45,14 @@ export function DialogModal({
 
   return (
     <div
-      className="modal-overlay"
+      className={`modal-overlay position-fixed top-0 start-0 w-100 h-100 d-flex ${dialogType === 'comments' ? 'align-items-stretch justify-content-end p-0' : 'align-items-center justify-content-center p-3'}`}
       onClick={handleBackdropClick}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        display: 'flex',
-        alignItems: dialogType === 'comments' ? 'stretch' : 'center',
-        justifyContent: dialogType === 'comments' ? 'flex-end' : 'center',
-        background: 'rgba(3, 7, 18, 0.72)',
-        backdropFilter: 'blur(8px)'
-      }}
     >
       <dialog
         ref={dialogRef}
         id="app-dialog"
         open
-        className={dialogType === 'comments' ? 'discussion-dialog' : ''}
-        style={{
-          margin: dialogType === 'comments' ? '0 0 0 auto' : 'auto',
-          display: dialogType === 'comments' ? 'flex' : 'block'
-        }}
+        className={dialogType === 'comments' ? 'discussion-dialog d-flex flex-column ms-auto my-0 me-0' : 'd-block m-auto'}
       >
         {dialogType === 'help' && (
           <HelpDialog onClose={onClose} onResetSubmit={onResetSubmit} />
@@ -167,7 +153,7 @@ function HelpDialog({ onClose, onResetSubmit }) {
   return (
     <>
       <DialogHeader title="How can we help?" onClose={onClose} />
-      <div className="stack modal-body">
+      <div className="d-flex flex-column gap-3 modal-body">
         <p>New here? Create an account, set up your profile, and start connecting with the community.</p>
         <details>
           <summary>How do I sign in?</summary>
@@ -229,7 +215,7 @@ function OAuthDialog({ pending, onClose, onOAuthSubmit }) {
   return (
     <>
       <DialogHeader title={`${name} OAuth 2.0 Demo`} onClose={onClose} />
-      <form onSubmit={handleSubmit} id="oauth-form" className="stack modal-body">
+      <form onSubmit={handleSubmit} id="oauth-form" className="d-flex flex-column gap-3 modal-body">
         <div className="text-center">
           <ProviderMark provider={pending.provider} />
           <h3>{pending.isSignUp ? 'Sign up' : 'Sign in'} with {name}</h3>
@@ -275,11 +261,11 @@ code_challenge: ${pending.codeChallenge}`}
           </pre>
         </details>
 
-        <div className="row">
-          <button type="button" className="secondary-button" onClick={onClose}>
+        <div className="d-flex align-items-center gap-2">
+          <button type="button" className="btn secondary-button" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="auth-btn-continue" disabled={submitting}>
+          <button type="submit" className="btn auth-btn-continue" disabled={submitting}>
             {submitting ? 'Authorizing…' : 'Authorize & Continue'}
           </button>
         </div>
@@ -344,7 +330,7 @@ function CommandsDialog({
   return (
     <>
       <DialogHeader title="Search & Commands" onClose={onClose} />
-      <label className="sr-only" htmlFor="command-input">Find a command</label>
+      <label className="visually-hidden" htmlFor="command-input">Find a command</label>
       <input
         id="command-input"
         className="auth-input"
@@ -384,7 +370,7 @@ function MenuDialog({ onClose, onEditProfile, onSwitchBackground, onOpenHelp, on
   return (
     <>
       <DialogHeader title="More Options" onClose={onClose} />
-      <div className="stack modal-body">
+      <div className="d-flex flex-column gap-3 modal-body">
         <button
           type="button"
           className="command-option"
@@ -439,7 +425,7 @@ function ProfileEditDialog({ profile, onClose, onSubmit }) {
     <>
       <DialogHeader title="Edit Profile" onClose={onClose} />
       <form onSubmit={handleSubmit} id="profile-form" className="modal-body">
-        <div className="identity-preview row">
+        <div className="identity-preview d-flex align-items-center gap-3">
           <Avatar user={draft} className="large" />
           <div>
             <strong id="preview-name">{draft.name}</strong>
@@ -524,7 +510,7 @@ function CommentItem({ comment, currentUser, parentId = '', onReply, onLike, onD
         </div>
       </div>
       <p>{comment.content}</p>
-      <div className="row small">
+      <div className="d-flex align-items-center gap-2 small">
         {!parentId && (
           <>
             <button
@@ -626,7 +612,7 @@ function CommentsDialog({
 
       <form onSubmit={handleSubmit} id="comment-form" className="comment-form">
         {replyingTo && (
-          <div id="reply-banner" className="row between">
+          <div id="reply-banner" className="d-flex align-items-center justify-content-between">
             <span>Replying to @{replyingTo.author.handle}</span>
             <button
               type="button"
@@ -639,7 +625,7 @@ function CommentsDialog({
           </div>
         )}
 
-        <div className="row quick-emojis">
+        <div className="d-flex align-items-center gap-1 quick-emojis">
           {emojis.map(em => (
             <button
               key={em}
@@ -653,7 +639,7 @@ function CommentsDialog({
           ))}
         </div>
 
-        <label className="sr-only" htmlFor="comment-input">Write a comment</label>
+        <label className="visually-hidden" htmlFor="comment-input">Write a comment</label>
         <textarea
           id="comment-input"
           className="auth-input"

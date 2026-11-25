@@ -173,7 +173,7 @@ export function ProfileView({
               ))}
             </div>
           </div>
-          <div className="row between small">
+          <div className="d-flex align-items-center justify-content-between small">
             <span>
               Less <span className="activity-cell level-0"></span>{' '}
               <span className="activity-cell level-2"></span>{' '}

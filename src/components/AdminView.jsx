@@ -56,16 +56,16 @@ export function AdminView({ user, onSignOut }) {
   };
 
   return (
-    <main className="admin-page">
-      <header className="admin-header">
+    <main className="admin-page container-xl">
+      <header className="admin-header d-flex align-items-center justify-content-between gap-3">
         <div>
-          <p className="admin-eyebrow">Social Connectivity Platform</p>
+          <p className="admin-eyebrow">SocialConnect</p>
           <h1>Admin portal</h1>
           <p className="muted">Manage registered user accounts from one protected workspace.</p>
         </div>
-        <div className="admin-header-actions">
-          <span className="admin-identity">{user.name}</span>
-          <button type="button" className="secondary-button" onClick={onSignOut}>
+        <div className="admin-header-actions d-flex align-items-center gap-2">
+          <span className="admin-identity badge rounded-pill">{user.name}</span>
+          <button type="button" className="btn btn-outline-secondary secondary-button" onClick={onSignOut}>
             Sign out
           </button>
         </div>
@@ -79,13 +79,13 @@ export function AdminView({ user, onSignOut }) {
         </div>
 
         <section className="admin-users-card" aria-labelledby="admin-users-heading">
-          <div className="admin-users-toolbar">
+          <div className="admin-users-toolbar d-flex align-items-center justify-content-between gap-3">
             <div>
               <h2 id="admin-users-heading">User management</h2>
               <p className="muted">Search by name or email to manage access.</p>
             </div>
             <input
-              className="admin-search"
+              className="form-control admin-search"
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -94,7 +94,7 @@ export function AdminView({ user, onSignOut }) {
             />
           </div>
 
-          {error && <div className="auth-error-banner" role="alert">{error}</div>}
+          {error && <div className="alert alert-danger auth-error-banner" role="alert">{error}</div>}
           {loading && <p className="muted">Loading user accounts…</p>}
           {!loading && !error && filteredUsers.length === 0 && (
             <p className="muted admin-empty-state">No users match your search.</p>
@@ -106,19 +106,19 @@ export function AdminView({ user, onSignOut }) {
                 const protectedAdmin = managedUser.id === DEMO_ADMIN_ID;
                 const active = managedUser.active !== false;
                 return (
-                  <article className="admin-user-row" key={managedUser.id}>
+                  <article className="admin-user-row d-flex align-items-center justify-content-between gap-3" key={managedUser.id}>
                     <div className="admin-user-details">
                       <strong>{managedUser.name}</strong>
                       <span className="muted">{managedUser.email}</span>
                     </div>
-                    <span className="admin-role">{managedUser.role}</span>
+                    <span className="admin-role badge rounded-pill text-bg-secondary">{managedUser.role}</span>
                     <span className={`admin-status ${active ? 'active' : 'inactive'}`}>
                       {active ? 'Active' : 'Deactivated'}
                     </span>
-                    <div className="admin-user-actions">
+                    <div className="admin-user-actions d-flex align-items-center gap-2">
                       <button
                         type="button"
-                        className="secondary-button"
+                        className="btn btn-outline-secondary secondary-button"
                         disabled={protectedAdmin}
                         onClick={() => handleToggleActive(managedUser)}
                       >
@@ -126,7 +126,7 @@ export function AdminView({ user, onSignOut }) {
                       </button>
                       <button
                         type="button"
-                        className="admin-delete-button"
+                        className="btn btn-outline-danger admin-delete-button"
                         disabled={protectedAdmin}
                         onClick={() => handleDelete(managedUser)}
                       >

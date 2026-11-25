@@ -41,7 +41,7 @@ export function OnboardingView({ profile, setProfile, step, setStep, onFinish })
   return (
     <main className="onboarding-main">
       <section className="auth-box-card onboarding-card animate-fade-in">
-        <div className="row between">
+        <div className="d-flex align-items-center justify-content-between">
           <span className="eyebrow">Step {step} of 3 • Profile Setup</span>
           <button
             type="button"
@@ -63,7 +63,7 @@ export function OnboardingView({ profile, setProfile, step, setStep, onFinish })
         <form onSubmit={handleSubmit} id="onboarding-form">
           {step === 1 && (
             <>
-              <div className="identity-preview row">
+              <div className="identity-preview d-flex align-items-center gap-3">
                 <Avatar user={profile} className="large" />
                 <div>
                   <strong id="preview-name">{profile.name}</strong>
@@ -161,7 +161,7 @@ export function OnboardingView({ profile, setProfile, step, setStep, onFinish })
           {step === 3 && (
             <>
               <p className="description">Choose your profile visibility preference.</p>
-              <div className="stack">
+              <div className="d-flex flex-column gap-3">
                 {[
                   ['public', 'Open Community', 'Anyone can discover your public profile.', 'compass'],
                   ['mutual', 'Friends & Mutuals Only', 'Share with connections and mutual friends.', 'user'],
@@ -192,7 +192,7 @@ export function OnboardingView({ profile, setProfile, step, setStep, onFinish })
             </>
           )}
 
-          <div className="row onboarding-actions">
+          <div className="d-flex align-items-center gap-2 onboarding-actions">
             {step > 1 && (
               <button
                 type="button"

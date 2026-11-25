@@ -134,7 +134,7 @@ export function MessagesView({
           <h1 className="card-title">
             <Icon name="message" size={16} /> Direct Messages
           </h1>
-          <label className="sr-only" htmlFor="contacts-search-input">Search conversations</label>
+          <label className="visually-hidden" htmlFor="contacts-search-input">Search conversations</label>
           <div className="contacts-search">
             <Icon name="search" size={14} />
             <input
@@ -147,7 +147,7 @@ export function MessagesView({
           </div>
         </div>
 
-        <div id="contacts-list" className="stack">
+        <div id="contacts-list" className="d-flex flex-column gap-2">
           {filteredContacts.map(person => {
             const online = socket?.connected && socket?.activeUsers?.some(
               u => u.userId === person.id && u.isOnline
@@ -261,10 +261,10 @@ export function MessagesView({
         {!recording ? (
           <form
             id="message-form"
-            className="row chat-composer"
+            className="d-flex align-items-center gap-2 chat-composer"
             onSubmit={handleFormSubmit}
           >
-            <label className="sr-only" htmlFor="chat-input">
+            <label className="visually-hidden" htmlFor="chat-input">
               Message {partner.name}
             </label>
             <input
@@ -294,7 +294,7 @@ export function MessagesView({
             </button>
           </form>
         ) : (
-          <div id="voice-recorder" className="row">
+          <div id="voice-recorder" className="d-flex align-items-center gap-2">
             <span className="recording-dot"></span>
             <span id="recording-time">
               Recording {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, '0')}
