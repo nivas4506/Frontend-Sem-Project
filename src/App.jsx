@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { startBackground } from './background';
 import { readStored } from './utils/ui';
 import { toast } from './utils/toast';
-import { contacts, creators, stories, trending } from './data';
+import { contacts, creators, trending } from './data';
 
 import { useAuth } from './hooks/useAuth';
 import { useSocket } from './hooks/useSocket';
@@ -44,7 +44,6 @@ export default function App() {
   const [background, setBackgroundMode] = useState(() => readStored('scp_background', 'fibers'));
   const [dialogType, setDialogType] = useState('');
   const [dialogData, setDialogData] = useState({});
-  const [seenNotificationCount, setSeenNotificationCount] = useState(0);
 
   const backgroundSetterRef = useRef(null);
   const typingTimerRef = useRef(null);
@@ -217,6 +216,9 @@ export default function App() {
     sendMessage,
     markMessagesAsRead,
     rsvpEvent,
+    markStorySeen,
+    createStory,
+    markNotificationsRead,
     resetStateForUser
   } = useSocialPlatform(session, sendSocket);
 
@@ -246,7 +248,6 @@ export default function App() {
       result = await signIn(formData.email, formData.password, portalMode);
     }
     resetStateForUser(result.user);
-    setSeenNotificationCount(0);
     toast(`Welcome, ${result.user.name}!`, 'success');
   };
 
@@ -254,7 +255,6 @@ export default function App() {
     const result = await completeOAuth(pending.provider, overrides, pending.isSignUp);
     setDialogType('');
     resetStateForUser(result.user);
-    setSeenNotificationCount(0);
     toast(`Welcome, ${result.user.name}!`, 'success');
   };
 
@@ -267,7 +267,6 @@ export default function App() {
     saveState(stateRef.current);
     signOut();
     resetStateForUser(null);
-    setSeenNotificationCount(0);
     setDialogType('');
     toast('You have been signed out.');
   };
@@ -327,9 +326,9 @@ export default function App() {
 
   useEffect(() => {
     if (state.tab === 'notifications') {
-      setSeenNotificationCount(state.notifications.length);
+      markNotificationsRead();
     }
-  }, [state.tab, state.notifications.length]);
+  }, [state.tab, state.notifications.length, markNotificationsRead]);
 
   const handleNavigate = (tab) => {
     setDialogType('');
@@ -337,7 +336,7 @@ export default function App() {
     if (tab === 'messages') {
       markMessagesAsRead(state.partnerId);
     } else if (tab === 'notifications') {
-      setSeenNotificationCount(state.notifications.length);
+      markNotificationsRead();
     }
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
@@ -352,7 +351,7 @@ export default function App() {
   const unreadCount = state.messages.filter(
     m => m.toUserId === session?.user?.id && m.status !== 'READ'
   ).length;
-  const unreadNotifications = Math.max(0, state.notifications.length - seenNotificationCount);
+  const unreadNotifications = state.notifications.filter(n => !n.read).length;
 
   if (!session) {
     return (
@@ -449,7 +448,11 @@ export default function App() {
             onOpenHelp={() => setDialogType('help')}
             contacts={contacts}
             creators={creators}
-            stories={stories}
+            recommendations={state.recommendations}
+            stories={state.stories}
+            seenStories={state.seenStories}
+            onMarkStorySeen={markStorySeen}
+            onCreateStory={createStory}
             trending={trending}
             events={state.events}
           />
@@ -472,6 +475,7 @@ export default function App() {
             contacts={contacts}
             creators={creators}
             trending={trending}
+            authToken={session.jwt?.accessToken}
           />
         )}
 

@@ -1,23 +1,49 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon, Avatar } from './Icons';
 import { readStored } from '../utils/ui';
+import { toast } from '../utils/toast';
 
 const SEEN_KEY = 'scp_seen_stories';
 
-export function StoriesBar({ user, stories, onAddStory }) {
+export function StoriesBar({ user, stories, seenStories, onMarkStorySeen, onCreateStory, onAddStory }) {
   // Snapshot of the story order taken when the viewer opens, so marking
   // stories as seen does not reshuffle them mid-playback.
   const [viewer, setViewer] = useState(null);
-  const [seen, setSeen] = useState(() => readStored(SEEN_KEY, []));
+  const [localSeen, setLocalSeen] = useState(() => readStored(SEEN_KEY, []));
+  const fileInputRef = useRef(null);
+
+  const seen = Array.isArray(seenStories) ? seenStories : localSeen;
 
   const markSeen = useCallback((id) => {
-    setSeen(prev => {
+    if (onMarkStorySeen) {
+      onMarkStorySeen(id);
+      return;
+    }
+    setLocalSeen(prev => {
       if (prev.includes(id)) return prev;
       const next = [...prev, id];
       try { localStorage.setItem(SEEN_KEY, JSON.stringify(next)); } catch { /* storage full */ }
       return next;
     });
-  }, []);
+  }, [onMarkStorySeen]);
+
+  const handleStoryFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+      toast('Choose a PNG, JPEG, WebP, or GIF image smaller than 2 MB.', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string' && onCreateStory) {
+        onCreateStory(reader.result, '');
+      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.onerror = () => toast('Could not read this image.', 'error');
+    reader.readAsDataURL(file);
+  };
 
   // Unseen stories first, like most social apps.
   const ordered = [...stories].sort(
@@ -27,13 +53,30 @@ export function StoriesBar({ user, stories, onAddStory }) {
   return (
     <>
       <section className="stories-bar" aria-label="Stories">
-        <button type="button" className="story-item" onClick={onAddStory}>
+        <button
+          type="button"
+          className="story-item"
+          onClick={() => {
+            if (onCreateStory && fileInputRef.current) fileInputRef.current.click();
+            else onAddStory?.();
+          }}
+        >
           <span className="story-ring own">
             <Avatar user={user} />
             <span className="story-add" aria-hidden="true"><Icon name="plus" size={12} /></span>
           </span>
           <span className="story-name">Your story</span>
         </button>
+        {onCreateStory && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="visually-hidden"
+            aria-label="Upload story photo"
+            onChange={handleStoryFileChange}
+          />
+        )}
 
         {ordered.map((story, idx) => {
           const isSeen = seen.includes(story.id);

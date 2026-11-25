@@ -19,7 +19,7 @@ export class SocketService {
   connect() {
     if (!this.session) return;
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${location.hostname || 'localhost'}:4001`;
+    const url = import.meta.env.VITE_WS_URL || `${protocol}//${location.host}/ws`;
     let socket;
     try {
       socket = new WebSocket(url);

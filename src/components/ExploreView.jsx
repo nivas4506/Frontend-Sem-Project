@@ -1,6 +1,7 @@
 import React from 'react';
 import { Icon, Avatar } from './Icons';
 import { mediaURL } from '../utils/ui';
+import { apiService } from '../services/apiService';
 import { PostCard, formatCount } from './FeedView';
 
 export function PostTile({ post, index = 0, featured = false, onOpen }) {
@@ -42,16 +43,42 @@ export function ExploreView({
   onSave,
   contacts,
   creators = [],
-  trending = []
+  trending = [],
+  authToken = ''
 }) {
+  const [remotePosts, setRemotePosts] = React.useState(null);
   const query = searchQuery.replace(/^#/, '').trim().toLowerCase();
   const people = [...contacts, ...creators];
 
-  const filteredPosts = posts.filter(post =>
+  React.useEffect(() => {
+    if (!query || !authToken) {
+      setRemotePosts(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      apiService.searchPosts(searchQuery, authToken)
+        .then((res) => {
+          if (!cancelled && Array.isArray(res?.posts)) {
+            setRemotePosts(res.posts);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setRemotePosts(null);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, searchQuery, authToken]);
+
+  const localFilteredPosts = posts.filter(post =>
     `${post.content} ${post.author.name} ${post.author.handle} ${(post.tags || []).join(' ')}`
       .toLowerCase()
       .includes(query)
   );
+  const filteredPosts = remotePosts ?? localFilteredPosts;
 
   const filteredPeople = people.filter(person =>
     `${person.name} ${person.handle} ${person.role}`

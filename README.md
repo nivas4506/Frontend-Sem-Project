@@ -2,7 +2,7 @@
 
 A modern dark-themed social media web application for self-expression, discovery, and community connection — featuring stories, a personalized feed, explore grid, direct messaging with voice notes, community events, notifications, and expressive user profiles.
 
-> **Stack:** React 18 + Bootstrap 5 (`data-bs-theme="dark"`) + custom CSS (`src/index.css`, `src/app.css`), Vite 6 for dev/build, and Node.js + `ws` for an optional real-time WebSocket gateway.
+> **Stack:** React 18 + Bootstrap 5 (`data-bs-theme="dark"`) + custom CSS (`src/index.css`, `src/app.css`), Vite 6 for dev/build, and a **Python FastAPI + SQLite + WebSocket** backend (`backend/`, with an optional legacy Node.js + `ws` gateway in `server/`).
 
 ## Features
 
@@ -38,10 +38,11 @@ A modern dark-themed social media web application for self-expression, discovery
 | Layer | Technology |
 | --- | --- |
 | Frontend | React 18, Bootstrap 5 (`bootstrap/dist/css/bootstrap.min.css`), CSS (`src/index.css`, `src/app.css`) |
+| Backend | Python 3.13+, FastAPI, Uvicorn (ASGI + WebSockets), SQLite (`backend/socialconnect.db`) |
 | Browser APIs | DOM, WebSocket, WebGL, MediaRecorder, Clipboard, localStorage, `<dialog>` |
-| Dev / Build | Vite 6 (`dev`, `build`, `preview`) |
-| Realtime (optional) | Node.js + `ws` WebSocket gateway on port `4001` |
-| Runtime | Node.js 20.19+ or 22.12+ |
+| Dev / Build | Vite 6 (`dev`, `build`, `preview`) with `/api`, `/health`, `/ws` proxy to `:8000` |
+| Realtime | FastAPI WebSocket `/ws` (or optional Node.js `ws` gateway on port `4001`) |
+| Runtime | Node.js 20.19+ or 22.12+, Python 3.11+ |
 
 ## Getting Started
 
@@ -54,12 +55,14 @@ npm run dev
 
 Open the URL Vite prints (normally `http://localhost:5173`).
 
-For live messages, typing indicators, presence, likes, and post broadcasts, install server dependencies once and start the WebSocket gateway in a second terminal:
+To run the **Python FastAPI + SQLite + WebSocket backend** (recommended for persistent API data, ranked feeds, HS256 JWT auth, and live WebSockets), open a second terminal:
 
 ```sh
-cd server && npm install && cd ..
-npm run server
+pip install -r backend/requirements.txt
+npm run backend
 ```
+
+Vite automatically proxies `/api`, `/health`, and `/ws` to `http://localhost:8000`. Without the backend running, the frontend seamlessly falls back to browser `localStorage`.
 
 ### Scripts
 
@@ -68,22 +71,20 @@ npm run server
 | `npm run dev` | Start Vite dev server (port 5173) |
 | `npm run build` | Production build to `dist/` |
 | `npm run preview` | Preview production build locally |
-| `npm run server` | Start realtime gateway (`server/server.js`) |
+| `npm run backend` | Start Python FastAPI + WebSocket backend (port 8000) |
+| `npm run test:backend` | Run Python backend `pytest` suite (`backend/tests`) |
+| `npm run server` | Start optional legacy Node.js realtime gateway (`server/server.js`) |
 | `npm test` | Run Node test runner (`node --test test/*.test.js`) |
 
 ### Environment Variables
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `VITE_WS_URL` | `ws://localhost:4001` | WebSocket endpoint used by frontend |
-| `PORT` | `4001` | Port for `server/server.js` gateway |
-
-Example:
-
-```sh
-PORT=4001 node server/server.js
-VITE_WS_URL=ws://localhost:4001 npm run dev
-```
+| `VITE_API_URL` | `""` (Vite proxy) | Base URL for REST API calls in production |
+| `VITE_WS_URL` | `ws(s)://<host>/ws` | WebSocket endpoint used by frontend |
+| `JWT_SECRET` | `socialconnect-dev-secret-2026` | HMAC-SHA256 signing secret for Python JWTs |
+| `SCP_DB_PATH` | `backend/socialconnect.db` | SQLite database file path |
+| `PORT` | `4001` | Port for legacy `server/server.js` gateway |
 
 ## Project Structure
 
@@ -115,10 +116,20 @@ VITE_WS_URL=ws://localhost:4001 npm run dev
 │   │   ├── OnboardingView.jsx        # 3-step profile setup wizard
 │   │   ├── AdminView.jsx             # Protected admin user-management dashboard
 │   │   └── Icons.jsx                 # SVG icons, VerifiedBadge, Avatar, OAuth provider marks
-│   ├── hooks/                        # useAuth, useSocialPlatform, useSocket
-│   ├── services/                     # authService (local demo auth), socketService (WS client)
+│   ├── hooks/                        # useAuth, useSocialPlatform (API sync + offline fallback), useSocket
+│   ├── services/                     # apiService (REST client), authService (auth + fallback), socketService (WS)
 │   └── utils/                        # toast notifications & media/storage helpers
-├── server/
+├── backend/
+│   ├── main.py                       # FastAPI REST endpoints, media serving, auth guards, /ws route
+│   ├── database.py                   # SQLite schema (stories, tokens, notifications), seeding & CRUD
+│   ├── ranking.py                    # Time-decay feed ranking, search scoring & creator recommendations
+│   ├── security.py                   # PBKDF2-HMAC-SHA256, HS256 JWT (JTI), SHA-256 media, rate limiter
+│   ├── realtime.py                   # Async WebSocket connection manager & fanout router
+│   ├── Dockerfile                    # Container build for Render / cloud deployment
+│   ├── requirements.txt              # Python dependencies
+│   └── tests/test_api.py             # Pytest suite (security, ranking, stories, media, REST, WS)
+├── render.yaml                       # Render blueprint for backend API + SQLite persistent disk
+├── server/                           # Optional legacy Node.js WebSocket gateway
 │   ├── package.json
 │   ├── server.js                     # Optional in-memory WebSocket gateway
 │   └── test_realtime.js              # Realtime gateway test script
@@ -131,36 +142,43 @@ VITE_WS_URL=ws://localhost:4001 npm run dev
 
 ## How It Works
 
-- **Auth:** Demo accounts and sessions are stored in browser `localStorage`. OAuth, JWTs, and password-reset dialogs are local UI flows — no external email or identity provider is used.
-- **Feed & Stories:** Local seed data merges smoothly with per-account `localStorage` persistence (including posts, likes, comments, follows, saved bookmarks, and seen stories), with live like/post broadcasts when the WebSocket gateway is running.
-- **Messaging:** The WebSocket gateway maintains presence and in-memory conversations, with simulated auto-replies from seeded contacts. Offline messages stay marked `LOCAL`.
+- **Python Backend + Offline Fallback:** When `npm run backend` (port `8000`) is running, auth, admin management, posts, likes, bookmarks, comments, follows, events, and messages persist to SQLite (`backend/socialconnect.db`) with HS256 JWT authentication and real-time `/ws` broadcasts. If the backend is unreachable (such as a static Vercel preview), `apiService` triggers a seamless fallback to browser `localStorage`.
+- **Feed & Stories:** `GET /api/state` and `GET /api/feed` rank the **For you** feed via the Python time-decay gravity + affinity scorer (`backend/ranking.py`), while local seed data merges cleanly with per-account `localStorage` state.
+- **Messaging:** The WebSocket gateway maintains presence and persistent SQLite conversations (`backend/realtime.py`), with simulated auto-replies from seeded contacts. Offline messages stay marked `LOCAL`.
 - **Media:** Post images are validated client-side (≤ 2 MB). Google Fonts and Unsplash sample photos require internet access.
 
 ## Algorithms Used in the Codebase
 
 | Algorithm / Technique | Location | Purpose & Complexity |
 | --- | --- | --- |
+| Time-Decay Gravity + Affinity Feed Ranking | `backend/ranking.py` | Scores **For you** posts by `(engagement / (age_hours + 2)^1.4) * (1 + follow_boost + 0.30 * jaccard)` in O(N log N) |
+| Weighted Multi-Field Token Search Ranking | `backend/ranking.py` | Scores posts by author (`3.0`), tags/hashtags (`2.5`), content (`1.0`) + `0.25 * log1p(likes)` tie-breaker |
+| Jaccard Creator Recommendation | `backend/ranking.py` | Ranks unfollowed creators via `2.0 * jaccard(interests, creator_topics) + 0.25 * mutuals` |
+| PBKDF2-HMAC-SHA256 Password Hashing | `backend/security.py` | 100,000-iteration salted SHA-256 KDF with constant-time `hmac.compare_digest` verification |
+| HMAC-SHA256 Signed JWT & Refresh Rotation | `backend/security.py`, `backend/database.py` | Signs HS256 JWTs with `jti`; rotates single-use refresh tokens and revokes JTIs on logout |
+| SHA-256 Content-Addressed Media Storage | `backend/security.py`, `backend/main.py` | Hashes uploaded image/audio bytes (`sha256[:20].ext`) for O(1) deduplicated disk storage |
+| 24-Hour TTL Story Grouping & Partitioning | `backend/database.py`, `src/components/StoriesBar.jsx` | Filters active stories (`expires_at > now_ms`), groups slides by user, and sorts unseen first |
+| Sliding-Window Rate Limiter (`deque`) | `backend/security.py` | Per-IP `collections.deque` eviction protecting auth routes in amortized O(1) per request |
 | Truncated Exponential Backoff | `src/services/socketService.js` | Reconnects WebSocket with `min(30000, 2000 * 2^attempt)` ms delay; resets on `auth:success` |
-| Fanout-on-Write & Multi-Socket Routing | `server/server.js` | `userId → Set<WebSocket>` O(k) direct routing & O(n) filtered broadcast for posts/likes/presence |
-| Canonical Pair Keying | `server/server.js` | `[userA, userB].sort().join('::')` for deterministic O(1) 1:1 conversation `Map` lookup |
+| Fanout-on-Write & Multi-Socket Routing | `backend/realtime.py`, `server/server.js` | `userId → Set<WebSocket>` O(k) direct routing & O(n) filtered broadcast for posts/likes/presence |
+| Canonical Pair Keying | `backend/database.py`, `server/server.js` | `"::".join(sorted([userA, userB]))` for deterministic O(1) 1:1 conversation lookups |
 | WebSocket Heartbeat Sweep | `server/server.js` | 30s ping/pong liveness check across `wss.clients`, terminating unresponsive sockets |
 | Set-Based Seed Merging & Popularity Sort | `src/hooks/useSocialPlatform.js`, `src/components/ExploreView.jsx` | O(N + M) `Set` deduplication on persisted posts; O(N log N) descending like sort + substring filter |
 | Unseen-First Story Partitioning | `src/components/StoriesBar.jsx` | Sorts unseen stories first and snapshots playback order when opening `StoryViewer` |
 | Rolling 26-Week Heatmap Aggregation | `src/components/ProfileView.jsx` | 182-day `en-CA` date-bucket lookup in O(1) per cell quantized into 5 intensity levels |
-| Password Scorer, Base64URL JWT & PKCE | `src/components/AuthView.jsx`, `src/services/authService.js` | 4-rule additive password strength score; Base64URL RS256-structured mock JWT & PKCE params |
+| Password Scorer & PKCE Generator | `src/components/AuthView.jsx`, `src/services/authService.js` | 4-rule additive password strength score & OAuth 2.0 PKCE demo parameters |
 | Debounce, Modulo Nav & Tokenization | `src/App.jsx`, `src/components/DialogModal.jsx`, `src/components/FeedView.jsx` | 1400ms typing debounce, circular modulo `(i ± 1 + len) % len` palette nav, `/(#\w+)/g` parsing |
 | Procedural Domain-Warped WebGL Shader | `src/background.js` | 4-layer sinusoidal warping, radial twist, exponential tone mapping & 5-octave `grainHash` noise |
 
+- **Time-Decay Gravity + Affinity Feed Ranking (`backend/ranking.py`):** Computes `engagement = 1.0 + 1.5 * likes + 2.5 * comments`, `decay = (age_hours + 2.0) ** 1.4`, and `affinity = 1.0 + follow_boost + 0.30 * jaccard(user_interests, post_tokens)` to balance freshness, engagement, followed creators, and topic overlap.
+- **Weighted Multi-Field Token Search Ranking (`backend/ranking.py`):** Tokenizes queries and requires all terms to match across post fields, weighting author matches (`3.0`), tags/hashtags (`2.5`), and body text (`1.0`) plus a `0.25 * log1p(likes)` popularity tie-breaker.
+- **Jaccard Creator Recommendation (`backend/ranking.py`):** Filters out already-followed accounts and ranks candidate creators by `2.0 * jaccard(interests, creator_topics) + 0.25 * mutuals`.
+- **PBKDF2-HMAC-SHA256, HS256 JWT & Sliding-Window Rate Limiter (`backend/security.py`):** Hashes user passwords with 100,000 PBKDF2-HMAC-SHA256 iterations and 16-byte random salts (`hmac.compare_digest` verification), signs/verifies HS256 JWTs, and enforces per-client auth rate limits using `collections.deque`.
 - **Truncated Exponential Backoff (`SocketService.scheduleRetry`):** Retries dropped WebSocket connections using `delay = Math.min(30000, 2000 * 2 ** attempt)` ms (`2s → 4s → 8s → 16s → 30s` cap) and resets `attempt = 0` upon `auth:success`.
-- **Fanout-on-Write Broadcast & Multi-Socket Routing (`server/server.js`):** Maintains `connectedClients` (`Map<userId, Set<WebSocket>>`) for O(k) multi-tab direct delivery (`sendToUser` for `message:new`, `typing:indicator`, `message:read_receipt`, and notifications) and O(n) filtered `broadcast` fanout (`post:new`, `post:like`, `presence:update`).
-- **Canonical Pair Keying (`getConversationKey`):** Sorts `[userA, userB].sort().join('::')` so both participants deterministically map to a single O(1) `Map` bucket regardless of sender/receiver order.
-- **WebSocket Heartbeat Sweep:** Runs a 30-second ping/pong sweep across `wss.clients`, marking `isAlive = false`, sending `ws.ping()`, and calling `ws.terminate()` on sockets that fail to respond before the next interval.
-- **Feed Ordering, Set-Based Seed Merging & Popularity Ranking:** New posts prepend in reverse-chronological order and filter by `following` + `user.id` on the **Following** tab. `mergeSeedPosts` uses a `Set` of existing post IDs (O(N + M)) to merge new seed posts into `localStorage` without duplicating or overwriting user posts. `ExploreView` sorts popular posts descending by likes (`b.likes - a.likes`, O(N log N)) and performs case-insensitive multi-field substring filtering across `content`, `author.name`, `author.handle`, and `tags`.
-- **Stories Unseen-First Partition Sorting (`StoriesBar.jsx`):** Sorts unseen stories before seen ones via `Number(seen.includes(a.id)) - Number(seen.includes(b.id))` and snapshots the list when `StoryViewer` opens so marking a story seen does not reshuffle slides mid-playback.
-- **26-Week Rolling Calendar Heatmap Aggregation (`ProfileView.jsx`):** Builds a 182-day rolling window ending today, indexing daily `en-CA` date buckets in O(1) per cell and clamping counts to 5 intensity levels (`Math.min(4, count)`).
-- **Password Strength Heuristic, Base64URL JWT & PKCE Generation (`AuthView.jsx`, `authService.js`, `server/server.js`):** Scores passwords on 4 additive checks (length ≥ 8, digit, uppercase letter, special character → `Weak` / `Fair` / `Good` / `Strong`), encodes/decodes Base64URL RS256-structured mock JWT payloads (`iat`/`exp` 15-minute window), and generates demo OAuth 2.0 PKCE parameters (`state`, `codeVerifier`, `codeChallenge`).
-- **UI & Text Processing Helpers:** Regex hashtag tokenization (`/(#\w+)/g` in `RichText`), 1400ms trailing typing-indicator debounce (`handleStartTyping` in `App.jsx`), circular modulo indexing (`(i ± 1 + len) % len`) for `Ctrl+K` command palette keyboard navigation, and keyword-matched rule-based auto-replies (`simulatePartnerResponse` in `server/server.js`).
-- **Procedural WebGL Domain-Warped Fragment Shader & 5-Octave Grain Noise (`background.js`):** Executes a 4-iteration sinusoidal domain warp with radial polar twist (`atan`/`cos`/`sin`), exponential ridge and glow accumulation, vignette attenuation, exponential tone mapping (`1.0 - exp(-color * 2.0)`), and 5-octave weighted `grainHash` noise to suppress color banding.
+- **Fanout-on-Write Broadcast & Multi-Socket Routing (`backend/realtime.py`, `server/server.js`):** Maintains `userId → Set<WebSocket>` for O(k) multi-tab direct delivery (`message:new`, `typing:indicator`, `message:read_receipt`, notifications) and O(n) filtered broadcast fanout (`post:new`, `post:like`, `presence:update`).
+- **Canonical Pair Keying (`canonical_conversation_key` / `getConversationKey`):** Sorts `[userA, userB]` and joins with `'::'` so both participants deterministically map to a single conversation bucket regardless of sender/receiver order.
+- **Feed Seed Merging, Stories Partitioning & Heatmap Aggregation:** `mergeSeedPosts` performs O(N + M) `Set` deduplication on persisted `localStorage` posts; `StoriesBar` partitions unseen stories first and snapshots playback order; `ProfileView` aggregates a 182-day rolling window into 5 intensity levels.
+- **UI Helpers & Procedural WebGL Shader:** Regex hashtag tokenization (`/(#\w+)/g`), 1400ms trailing typing debounce, circular modulo `(i ± 1 + len) % len` command palette navigation, and a 4-iteration domain-warped WebGL fragment shader with 5-octave `grainHash` noise.
 
 ## Admin Demo Access
 
@@ -180,7 +198,7 @@ npm run build
 npm run preview
 ```
 
-Deploy the generated `dist/` folder to any static host (Vercel deployments are pre-configured via `vercel.json` with SPA rewrites to `/index.html`). Always serve over HTTP/HTTPS rather than `file://` because the app uses ES modules.
+Deploy the generated `dist/` folder to any static host (Vercel deployments are pre-configured via `vercel.json` with SPA rewrites to `/index.html`). To deploy the Python FastAPI + SQLite + WebSocket backend, use `backend/Dockerfile` and `render.yaml` (setting `VITE_API_URL` and `VITE_WS_URL` on the frontend). Always serve over HTTP/HTTPS rather than `file://` because the app uses ES modules.
 
 ## Demo Scope & Limits
 

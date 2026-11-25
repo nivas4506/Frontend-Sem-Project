@@ -8,9 +8,10 @@ export function AdminView({ user, onSignOut }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const refreshUsers = () => {
+  const refreshUsers = async () => {
     try {
-      setUsers(authService.listManagedUsers());
+      const list = await authService.listManagedUsers();
+      setUsers(list);
       setError('');
     } catch (err) {
       setError(err.message || 'Could not load user accounts.');
@@ -32,23 +33,23 @@ export function AdminView({ user, onSignOut }) {
     ));
   }, [query, users]);
 
-  const handleToggleActive = (managedUser) => {
+  const handleToggleActive = async (managedUser) => {
     try {
       const nextState = managedUser.active === false;
-      authService.setUserActive(managedUser.id, nextState);
-      refreshUsers();
+      await authService.setUserActive(managedUser.id, nextState);
+      await refreshUsers();
       toast(`${managedUser.name} is now ${nextState ? 'active' : 'deactivated'}.`, 'success');
     } catch (err) {
       toast(err.message || 'Could not update this account.', 'error');
     }
   };
 
-  const handleDelete = (managedUser) => {
+  const handleDelete = async (managedUser) => {
     if (!window.confirm(`Delete ${managedUser.name}'s account?`)) return;
 
     try {
-      authService.deleteManagedUser(managedUser.id);
-      refreshUsers();
+      await authService.deleteManagedUser(managedUser.id);
+      await refreshUsers();
       toast(`${managedUser.name}'s account was deleted.`, 'success');
     } catch (err) {
       toast(err.message || 'Could not delete this account.', 'error');

@@ -3,3 +3,10 @@
 node_modules
 dist
 .worktrees
+backend/*.db
+backend/__pycache__/
+backend/tests/__pycache__/
+.pytest_cache/
+*.pyc
+pyrefly.toml
+backend/uploads/

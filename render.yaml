@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: socialconnect-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SCP_DB_PATH
+        value: /var/data/socialconnect.db
+    disk:
+      name: sqlite-data
+      mountPath: /var/data
+      sizeGB: 1

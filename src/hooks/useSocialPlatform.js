@@ -1,12 +1,14 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { readStored, makeId } from '../utils/ui';
 import { toast } from '../utils/toast';
+import { apiService } from '../services/apiService';
 import {
   initialMessages,
   seedComments,
   seedEvents,
   seedNotifications,
-  seedPosts
+  seedPosts,
+  stories as seedStories
 } from '../data';
 
 function mergeSeedPosts(savedPosts) {
@@ -30,7 +32,10 @@ function buildInitialState(user) {
     saved: saved.saved || [],
     messages: saved.messages || initialMessages(user?.id),
     notifications: saved.notifications || structuredClone(seedNotifications),
-    activity: saved.activity || {}
+    activity: saved.activity || {},
+    stories: saved.stories || structuredClone(seedStories),
+    seenStories: saved.seenStories || readStored('scp_seen_stories', []),
+    recommendations: saved.recommendations || []
   };
 }
 
@@ -45,16 +50,56 @@ export function useSocialPlatform(session, sendSocket) {
   const saveState = useCallback((currentState) => {
     const currentSession = sessionRef.current;
     if (!currentSession) return;
-    const { posts, events, comments, following, saved, messages, notifications, activity } = currentState;
+    const {
+      posts, events, comments, following, saved, messages,
+      notifications, activity, stories, seenStories, recommendations
+    } = currentState;
     try {
       localStorage.setItem(
         `scp_data_${currentSession.user.id}`,
-        JSON.stringify({ posts, events, comments, following, saved, messages, notifications, activity })
+        JSON.stringify({
+          posts, events, comments, following, saved, messages,
+          notifications, activity, stories, seenStories, recommendations
+        })
       );
     } catch {
       toast('Browser storage is full. This change is available for the current visit.', 'error');
     }
   }, []);
+
+  // Hydrate social state from the Python FastAPI backend when available.
+  useEffect(() => {
+    const userId = session?.user?.id;
+    const token = session?.jwt?.accessToken;
+    if (!userId || !token) return;
+    let cancelled = false;
+    apiService.getState(token)
+      .then((remote) => {
+        if (cancelled || !remote) return;
+        setState(prev => {
+          const updated = {
+            ...prev,
+            posts: Array.isArray(remote.posts) ? remote.posts : prev.posts,
+            events: Array.isArray(remote.events) ? remote.events : prev.events,
+            comments: remote.comments || prev.comments,
+            following: Array.isArray(remote.following) ? remote.following : prev.following,
+            saved: Array.isArray(remote.saved) ? remote.saved : prev.saved,
+            messages: Array.isArray(remote.messages) ? remote.messages : prev.messages,
+            notifications: Array.isArray(remote.notifications) ? remote.notifications : prev.notifications,
+            activity: remote.activity || prev.activity,
+            stories: Array.isArray(remote.stories) && remote.stories.length ? remote.stories : prev.stories,
+            seenStories: Array.isArray(remote.seenStories) ? remote.seenStories : prev.seenStories,
+            recommendations: Array.isArray(remote.recommendations) ? remote.recommendations : prev.recommendations
+          };
+          saveState(updated);
+          return updated;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, session?.jwt?.accessToken, saveState]);
 
   const recordActivity = useCallback(() => {
     const day = new Date().toLocaleDateString('en-CA');
@@ -72,12 +117,13 @@ export function useSocialPlatform(session, sendSocket) {
   }, [saveState]);
 
   const likePost = useCallback((postId) => {
+    let sentViaWs = false;
     setState(prev => {
       const updatedPosts = prev.posts.map(p => {
         if (p.id === postId) {
           const liked = !p.liked;
           const likes = Math.max(0, p.likes + (liked ? 1 : -1));
-          sendSocket?.('post:like', { postId, action: liked ? 'like' : 'unlike' });
+          sentViaWs = Boolean(sendSocket?.('post:like', { postId, action: liked ? 'like' : 'unlike' }));
           if (liked) recordActivity();
           return { ...p, liked, likes };
         }
@@ -87,6 +133,10 @@ export function useSocialPlatform(session, sendSocket) {
       saveState(updated);
       return updated;
     });
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (!sentViaWs && token) {
+      apiService.toggleLike(postId, token).catch(() => {});
+    }
   }, [sendSocket, recordActivity, saveState]);
 
   const toggleFollow = useCallback((id) => {
@@ -100,6 +150,10 @@ export function useSocialPlatform(session, sendSocket) {
       saveState(updated);
       return updated;
     });
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (token) {
+      apiService.toggleFollow(id, token).catch(() => {});
+    }
   }, [recordActivity, saveState]);
 
   const createPost = useCallback((content, image, isSocketConnected) => {
@@ -130,6 +184,22 @@ export function useSocialPlatform(session, sendSocket) {
       return updated;
     });
 
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (token) {
+      (async () => {
+        let finalImage = image;
+        if (image && image.startsWith('data:')) {
+          try {
+            const uploaded = await apiService.uploadMedia(image, token);
+            if (uploaded?.url) finalImage = uploaded.url;
+          } catch { /* fallback to inline data URL */ }
+        }
+        await apiService.createPost(
+          { id: post.id, content, image: finalImage, tags: post.tags, createdAt: post.createdAt },
+          token
+        );
+      })().catch(() => {});
+    }
     sendSocket?.('post:new', { post });
     recordActivity();
     toast(isSocketConnected ? 'Post published to the live feed!' : 'Post saved to your local feed.', 'success');
@@ -188,6 +258,10 @@ export function useSocialPlatform(session, sendSocket) {
     });
 
     recordActivity();
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (token) {
+      apiService.addComment(postId, { id: comment.id, content, replyingToId }, token).catch(() => {});
+    }
     return { updatedPost: updatedPostObj, updatedComments: updatedCommentsList };
   }, [recordActivity, saveState]);
 
@@ -211,6 +285,10 @@ export function useSocialPlatform(session, sendSocket) {
       return updated;
     });
 
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (token) {
+      apiService.toggleCommentLike(commentId, token).catch(() => {});
+    }
     return { updatedPost: updatedPostObj, updatedComments: updatedCommentsList };
   }, [saveState]);
 
@@ -251,6 +329,10 @@ export function useSocialPlatform(session, sendSocket) {
       return updated;
     });
 
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (token) {
+      apiService.deleteComment(commentId, token).catch(() => {});
+    }
     return { updatedPost: updatedPostObj, updatedComments: updatedCommentsList };
   }, [saveState]);
 
@@ -277,12 +359,29 @@ export function useSocialPlatform(session, sendSocket) {
       return updated;
     });
 
-    sendSocket?.('message:send', {
+    const sentViaWs = Boolean(sendSocket?.('message:send', {
       toUserId: partner,
       text: message.text,
       audio,
       tempId: message.id
-    });
+    }));
+
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (!sentViaWs && token) {
+      (async () => {
+        let finalAudio = audio;
+        if (audio && audio.startsWith('data:')) {
+          try {
+            const uploaded = await apiService.uploadMedia(audio, token);
+            if (uploaded?.url) finalAudio = uploaded.url;
+          } catch { /* fallback to inline audio data URL */ }
+        }
+        await apiService.sendMessage(
+          { id: message.id, toUserId: partner, text: message.text, audio: finalAudio },
+          token
+        );
+      })().catch(() => {});
+    }
 
     recordActivity();
     if (!isSocketConnected) {
@@ -302,6 +401,10 @@ export function useSocialPlatform(session, sendSocket) {
       });
       if (hasChange) {
         sendSocket?.('message:read', { toUserId: partnerId });
+        const token = sessionRef.current?.jwt?.accessToken;
+        if (token) {
+          apiService.markMessagesRead(partnerId, token).catch(() => {});
+        }
         const updated = { ...prev, messages: updatedMessages };
         saveState(updated);
         return updated;
@@ -330,6 +433,10 @@ export function useSocialPlatform(session, sendSocket) {
       toast(rsvpdState ? `RSVP confirmed for ${eventTitle}` : 'RSVP cancelled.');
       return updated;
     });
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (token) {
+      apiService.toggleRsvp(eventId, token).catch(() => {});
+    }
   }, [recordActivity, saveState]);
 
   const resetStateForUser = useCallback((user) => {
@@ -348,7 +455,87 @@ export function useSocialPlatform(session, sendSocket) {
       saveState(updated);
       return updated;
     });
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (token) {
+      apiService.toggleSave(postId, token).catch(() => {});
+    }
     toast(isSaved ? 'Removed from saved posts.' : 'Saved to your collection.', isSaved ? undefined : 'success');
+  }, [saveState]);
+
+  const markStorySeen = useCallback((storyId) => {
+    setState(prev => {
+      if (prev.seenStories.includes(storyId)) return prev;
+      const seenStories = [...prev.seenStories, storyId];
+      try { localStorage.setItem('scp_seen_stories', JSON.stringify(seenStories)); } catch { /* ignore */ }
+      const updated = { ...prev, seenStories };
+      saveState(updated);
+      return updated;
+    });
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (token) {
+      apiService.markStoryViewed(storyId, token).catch(() => {});
+    }
+  }, [saveState]);
+
+  const createStory = useCallback(async (image, caption = '') => {
+    const user = sessionRef.current?.user;
+    if (!user || !image) return;
+    const token = sessionRef.current?.jwt?.accessToken;
+    let storedImage = image;
+    if (token && image.startsWith('data:')) {
+      try {
+        const uploaded = await apiService.uploadMedia(image, token);
+        if (uploaded?.url) storedImage = uploaded.url;
+      } catch { /* fallback to inline data URL */ }
+    }
+
+    if (token) {
+      try {
+        const res = await apiService.createStory({ image: storedImage, caption }, token);
+        if (Array.isArray(res?.stories)) {
+          setState(prev => {
+            const updated = {
+              ...prev,
+              stories: res.stories,
+              seenStories: Array.isArray(res.seenStories) ? res.seenStories : prev.seenStories
+            };
+            saveState(updated);
+            return updated;
+          });
+          recordActivity();
+          toast('Your story is live for 24 hours!', 'success');
+          return;
+        }
+      } catch { /* offline fallback below */ }
+    }
+
+    const groupId = `st_${user.id}`;
+    const newSlide = { image: storedImage, caption, time: 'Just now' };
+    setState(prev => {
+      const existing = prev.stories.find(s => s.id === groupId);
+      const stories = existing
+        ? prev.stories.map(s => (s.id === groupId ? { ...s, slides: [...s.slides, newSlide] } : s))
+        : [{ id: groupId, user: { id: user.id, name: user.name, handle: user.username || 'user', avatar: user.avatar }, slides: [newSlide] }, ...prev.stories];
+      const updated = { ...prev, stories };
+      saveState(updated);
+      return updated;
+    });
+    recordActivity();
+    toast('Story added locally.', 'success');
+  }, [recordActivity, saveState]);
+
+  const markNotificationsRead = useCallback(() => {
+    setState(prev => {
+      if (!prev.notifications.some(n => !n.read)) return prev;
+      const notifications = prev.notifications.map(n => ({ ...n, read: true }));
+      const updated = { ...prev, notifications };
+      saveState(updated);
+      return updated;
+    });
+    const token = sessionRef.current?.jwt?.accessToken;
+    if (token) {
+      apiService.markNotificationsRead(token).catch(() => {});
+    }
   }, [saveState]);
 
   return {
@@ -367,6 +554,9 @@ export function useSocialPlatform(session, sendSocket) {
     sendMessage,
     markMessagesAsRead,
     rsvpEvent,
+    markStorySeen,
+    createStory,
+    markNotificationsRead,
     resetStateForUser
   };
 }

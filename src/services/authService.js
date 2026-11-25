@@ -6,6 +6,8 @@
  * - Accounts are registered on-the-fly and preserved in local storage
  */
 
+import { apiService } from './apiService';
+
 const STORAGE_KEY = 'scp_auth_session';
 const PENDING_OAUTH_KEY = 'scp_pending_oauth';
 const USERS_DB_KEY = 'scp_registered_users';
@@ -126,6 +128,10 @@ export const authService = {
 
   // Clear session
   clearSession() {
+    const token = this.getStoredSession()?.jwt?.accessToken;
+    if (token) {
+      apiService.logout(token).catch(() => {});
+    }
     localStorage.removeItem(STORAGE_KEY);
     sessionStorage.removeItem(PENDING_OAUTH_KEY);
   },
@@ -151,6 +157,19 @@ export const authService = {
 
   // Complete OAuth 2.0 Flow
   async completeOAuthFlow(provider, profileOverride = {}, isSignUp = false) {
+    try {
+      const remote = await apiService.oauth({
+        provider,
+        name: profileOverride.name || '',
+        email: profileOverride.email || '',
+        isSignUp: Boolean(isSignUp)
+      });
+      this.saveSession(remote);
+      return remote;
+    } catch (err) {
+      if (!err.isNetworkError) throw err;
+    }
+
     await new Promise((res) => setTimeout(res, 600));
 
     const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
@@ -207,6 +226,14 @@ export const authService = {
 
   // Email / Password Login (Authenticates against registered users)
   async signInWithEmail(email, password, portal = 'user') {
+    try {
+      const remote = await apiService.signin({ email, password, portal });
+      this.saveSession(remote);
+      return remote;
+    } catch (err) {
+      if (!err.isNetworkError) throw err;
+    }
+
     await new Promise((res) => setTimeout(res, 500));
 
     this.ensureSeededAdmin();
@@ -274,6 +301,14 @@ export const authService = {
 
   // Email Sign Up (Creates a brand new account - requires profile setup)
   async signUpWithEmail({ name, email, password }) {
+    try {
+      const remote = await apiService.signup({ name, email, password });
+      this.saveSession(remote);
+      return remote;
+    } catch (err) {
+      if (!err.isNetworkError) throw err;
+    }
+
     await new Promise((res) => setTimeout(res, 600));
 
     const cleanName = (name || '').trim();
@@ -326,6 +361,12 @@ export const authService = {
 
   // Password reset request
   async requestPasswordReset(email) {
+    try {
+      return await apiService.resetPassword(email);
+    } catch (err) {
+      if (!err.isNetworkError) throw err;
+    }
+
     await new Promise((res) => setTimeout(res, 400));
     const cleanEmail = (email || '').trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -337,12 +378,51 @@ export const authService = {
     };
   },
 
-  listManagedUsers() {
+  async updateProfile(fields, session) {
+    const token = session?.jwt?.accessToken;
+    if (token) {
+      try {
+        const res = await apiService.updateProfile(fields, token);
+        const updatedSession = {
+          ...session,
+          user: res.user,
+          jwt: res.jwt || session.jwt
+        };
+        this.saveSession(updatedSession);
+        return updatedSession;
+      } catch (err) {
+        if (!err.isNetworkError) throw err;
+      }
+    }
+    return null;
+  },
+
+  async listManagedUsers() {
+    const session = this.getStoredSession();
+    const token = session?.jwt?.accessToken;
+    if (token) {
+      try {
+        const res = await apiService.listAdminUsers(token);
+        return res.users;
+      } catch (err) {
+        if (!err.isNetworkError) throw err;
+      }
+    }
     this.ensureSeededAdmin();
     return this.getRegisteredUsers().map(({ password, ...user }) => user);
   },
 
-  setUserActive(userId, active) {
+  async setUserActive(userId, active) {
+    const session = this.getStoredSession();
+    const token = session?.jwt?.accessToken;
+    if (token) {
+      try {
+        const res = await apiService.setAdminUserActive(userId, active, token);
+        return res.user;
+      } catch (err) {
+        if (!err.isNetworkError) throw err;
+      }
+    }
     this.ensureSeededAdmin();
     const users = this.getRegisteredUsers();
     const index = users.findIndex((user) => user.id === userId);
@@ -360,7 +440,17 @@ export const authService = {
     return updatedUser;
   },
 
-  deleteManagedUser(userId) {
+  async deleteManagedUser(userId) {
+    const session = this.getStoredSession();
+    const token = session?.jwt?.accessToken;
+    if (token) {
+      try {
+        await apiService.deleteAdminUser(userId, token);
+        return true;
+      } catch (err) {
+        if (!err.isNetworkError) throw err;
+      }
+    }
     this.ensureSeededAdmin();
     if (userId === DEMO_ADMIN_ID) {
       throw new Error('The seeded admin account cannot be deleted.');

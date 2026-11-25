@@ -344,13 +344,17 @@ export function FeedView({
   onOpenHelp,
   contacts,
   creators = [],
+  recommendations = [],
   stories = [],
+  seenStories,
+  onMarkStorySeen,
+  onCreateStory,
   trending = [],
   events = []
 }) {
   const [feedTab, setFeedTab] = React.useState('foryou');
 
-  const allPeople = [...contacts, ...creators];
+  const allPeople = recommendations.length ? recommendations : [...contacts, ...creators];
   const suggestedPeople = allPeople.filter(p => !following.includes(p.id)).slice(0, 4);
   const visiblePosts = feedTab === 'following'
     ? posts.filter(p => following.includes(p.author.id) || p.author.id === user.id)
@@ -360,7 +364,14 @@ export function FeedView({
   return (
     <div className="feed-grid">
       <section className="feed-column">
-        <StoriesBar user={user} stories={stories} onAddStory={onFocusComposer} />
+        <StoriesBar
+          user={user}
+          stories={stories}
+          seenStories={seenStories}
+          onMarkStorySeen={onMarkStorySeen}
+          onCreateStory={onCreateStory}
+          onAddStory={onFocusComposer}
+        />
 
         <Composer user={user} onCreatePost={onCreatePost} />
 

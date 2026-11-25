@@ -69,6 +69,13 @@ export function useAuth() {
     const users = authService.getRegisteredUsers().map(u => u.id === updatedUser.id ? { ...u, ...fields } : u);
     localStorage.setItem('scp_registered_users', JSON.stringify(users));
     setSession(updatedSession);
+
+    authService.updateProfile(fields, session)
+      .then((remoteSession) => {
+        if (remoteSession) setSession(remoteSession);
+      })
+      .catch(() => {});
+
     return updatedSession;
   }, [session]);
 
