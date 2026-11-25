@@ -47,7 +47,13 @@ const conversations = new Map();
 // Post likes counter store: postId -> { count, likedUsers: Set<userId> }
 const postLikes = new Map([
   ['p1', { count: 42, likedUsers: new Set(['elena_r']) }],
-  ['p2', { count: 89, likedUsers: new Set(['s1', 's2']) }]
+  ['p2', { count: 89, likedUsers: new Set(['s1', 's2']) }],
+  ['p3', { count: 1204, likedUsers: new Set() }],
+  ['p4', { count: 318, likedUsers: new Set() }],
+  ['p5', { count: 642, likedUsers: new Set() }],
+  ['p6', { count: 276, likedUsers: new Set() }],
+  ['p7', { count: 935, likedUsers: new Set() }],
+  ['p8', { count: 2310, likedUsers: new Set() }]
 ]);
 
 function getConversationKey(userA, userB) {

@@ -19,6 +19,7 @@ export function MessagesView({
 }) {
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [contactQuery, setContactQuery] = useState('');
 
   const threadRef = useRef(null);
   const recorderRef = useRef(null);
@@ -26,6 +27,16 @@ export function MessagesView({
   const recordingRequestRef = useRef(0);
 
   const partner = contacts.find(c => c.id === partnerId) || contacts[0];
+  const partnerOnline = Boolean(
+    socket?.connected && socket?.activeUsers?.some(u => u.userId === partner.id && u.isOnline)
+  );
+
+  const filteredContacts = contacts.filter(person =>
+    `${person.name} ${person.handle} ${person.role}`
+      .toLowerCase()
+      .includes(contactQuery.trim().toLowerCase())
+  );
+
   const activeConversation = messages.filter(
     m => (m.fromUserId === partner.id && m.toUserId === user.id) ||
          (m.fromUserId === user.id && m.toUserId === partner.id)
@@ -119,15 +130,34 @@ export function MessagesView({
   return (
     <section className="panel messages-layout">
       <aside className="contacts-panel">
-        <h1 className="card-title">
-          <Icon name="message" size={16} /> Messages
-        </h1>
+        <div className="contacts-head">
+          <h1 className="card-title">
+            <Icon name="message" size={16} /> Direct Messages
+          </h1>
+          <label className="sr-only" htmlFor="contacts-search-input">Search conversations</label>
+          <div className="contacts-search">
+            <Icon name="search" size={14} />
+            <input
+              id="contacts-search-input"
+              type="search"
+              placeholder="Search chats…"
+              value={contactQuery}
+              onChange={(e) => setContactQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
         <div id="contacts-list" className="stack">
-          {contacts.map(person => {
+          {filteredContacts.map(person => {
             const online = socket?.connected && socket?.activeUsers?.some(
               u => u.userId === person.id && u.isOnline
             );
-            const hasUnread = messages.some(
+            const thread = messages.filter(
+              m => (m.fromUserId === person.id && m.toUserId === user.id) ||
+                   (m.fromUserId === user.id && m.toUserId === person.id)
+            );
+            const latestMsg = thread[thread.length - 1];
+            const hasUnread = thread.some(
               m => m.fromUserId === person.id && m.toUserId === user.id && m.status !== 'READ'
             );
             const isSelected = partnerId === person.id;
@@ -144,26 +174,42 @@ export function MessagesView({
                   setPartnerId(person.id);
                 }}
               >
-                <Avatar user={person} />
-                <span>
-                  <strong>{person.name}</strong>
-                  <small className={online ? 'accent' : ''}>
-                    {online ? 'Active on gateway' : 'Offline'}
-                    {hasUnread ? ' • New message' : ''}
+                <span className="avatar-wrap">
+                  <Avatar user={person} />
+                  <span className={`presence-dot ${online ? 'online' : ''}`} aria-hidden="true" />
+                </span>
+                <span className="contact-meta">
+                  <span className="contact-top">
+                    <strong>{person.name}</strong>
+                    {latestMsg?.time && <small className="contact-time">{latestMsg.time}</small>}
+                  </span>
+                  <small className="contact-preview">
+                    {latestMsg
+                      ? (latestMsg.audio ? '🎤 Voice note' : `${latestMsg.fromUserId === user.id ? 'You: ' : ''}${latestMsg.text}`)
+                      : `@${person.handle}`}
                   </small>
                 </span>
+                {hasUnread && <span className="contact-unread-dot" aria-label="Unread message" />}
               </button>
             );
           })}
+          {filteredContacts.length === 0 && (
+            <p className="small muted text-center">No matching conversations</p>
+          )}
         </div>
       </aside>
 
       <div className="chat-panel">
         <header className="author-row chat-header">
-          <Avatar user={partner} />
+          <span className="avatar-wrap">
+            <Avatar user={partner} />
+            <span className={`presence-dot ${partnerOnline ? 'online' : ''}`} aria-hidden="true" />
+          </span>
           <div>
             <strong>{partner.name}</strong>
-            <small>@{partner.handle} • {partner.role}</small>
+            <small className={partnerOnline ? 'accent' : ''}>
+              {partnerOnline ? 'Active now' : `@${partner.handle} · ${partner.role}`}
+            </small>
           </div>
         </header>
 

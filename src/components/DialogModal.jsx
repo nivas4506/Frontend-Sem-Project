@@ -65,7 +65,7 @@ export function DialogModal({
         className={dialogType === 'comments' ? 'discussion-dialog' : ''}
         style={{
           margin: dialogType === 'comments' ? '0 0 0 auto' : 'auto',
-          display: 'block'
+          display: dialogType === 'comments' ? 'flex' : 'block'
         }}
       >
         {dialogType === 'help' && (

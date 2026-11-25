@@ -9,24 +9,33 @@ import {
   seedPosts
 } from '../data';
 
+function mergeSeedPosts(savedPosts) {
+  if (!savedPosts) return structuredClone(seedPosts);
+  const known = new Set(savedPosts.map(p => p.id));
+  const missing = seedPosts.filter(p => !known.has(p.id));
+  return missing.length ? [...savedPosts, ...structuredClone(missing)] : savedPosts;
+}
+
+function buildInitialState(user) {
+  const saved = user ? readStored(`scp_data_${user.id}`, {}) : {};
+  return {
+    tab: 'feed',
+    partnerId: 's1',
+    searchQuery: '',
+    chatDrafts: {},
+    posts: mergeSeedPosts(saved.posts),
+    events: saved.events || structuredClone(seedEvents),
+    comments: saved.comments || structuredClone(seedComments),
+    following: saved.following || [],
+    saved: saved.saved || [],
+    messages: saved.messages || initialMessages(user?.id),
+    notifications: saved.notifications || structuredClone(seedNotifications),
+    activity: saved.activity || {}
+  };
+}
+
 export function useSocialPlatform(session, sendSocket) {
-  const [state, setState] = useState(() => {
-    const user = session?.user;
-    const saved = user ? readStored(`scp_data_${user.id}`, {}) : {};
-    return {
-      tab: 'feed',
-      partnerId: 's1',
-      searchQuery: '',
-      chatDrafts: {},
-      posts: saved.posts || structuredClone(seedPosts),
-      events: saved.events || structuredClone(seedEvents),
-      comments: saved.comments || structuredClone(seedComments),
-      following: saved.following || [],
-      messages: saved.messages || initialMessages(user?.id),
-      notifications: saved.notifications || structuredClone(seedNotifications),
-      activity: saved.activity || {}
-    };
-  });
+  const [state, setState] = useState(() => buildInitialState(session?.user));
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -36,11 +45,11 @@ export function useSocialPlatform(session, sendSocket) {
   const saveState = useCallback((currentState) => {
     const currentSession = sessionRef.current;
     if (!currentSession) return;
-    const { posts, events, comments, following, messages, notifications, activity } = currentState;
+    const { posts, events, comments, following, saved, messages, notifications, activity } = currentState;
     try {
       localStorage.setItem(
         `scp_data_${currentSession.user.id}`,
-        JSON.stringify({ posts, events, comments, following, messages, notifications, activity })
+        JSON.stringify({ posts, events, comments, following, saved, messages, notifications, activity })
       );
     } catch {
       toast('Browser storage is full. This change is available for the current visit.', 'error');
@@ -324,23 +333,23 @@ export function useSocialPlatform(session, sendSocket) {
   }, [recordActivity, saveState]);
 
   const resetStateForUser = useCallback((user) => {
-    const saved = user ? readStored(`scp_data_${user.id}`, {}) : {};
-    const freshlyInit = {
-      tab: 'feed',
-      partnerId: 's1',
-      searchQuery: '',
-      chatDrafts: {},
-      posts: saved.posts || structuredClone(seedPosts),
-      events: saved.events || structuredClone(seedEvents),
-      comments: saved.comments || structuredClone(seedComments),
-      following: saved.following || [],
-      messages: saved.messages || initialMessages(user?.id),
-      notifications: saved.notifications || structuredClone(seedNotifications),
-      activity: saved.activity || {}
-    };
+    const freshlyInit = buildInitialState(user);
     setState(freshlyInit);
     return freshlyInit;
   }, []);
+
+  const toggleSave = useCallback((postId) => {
+    const isSaved = stateRef.current.saved.includes(postId);
+    setState(prev => {
+      const saved = prev.saved.includes(postId)
+        ? prev.saved.filter(id => id !== postId)
+        : [...prev.saved, postId];
+      const updated = { ...prev, saved };
+      saveState(updated);
+      return updated;
+    });
+    toast(isSaved ? 'Removed from saved posts.' : 'Saved to your collection.', isSaved ? undefined : 'success');
+  }, [saveState]);
 
   return {
     state,
@@ -350,6 +359,7 @@ export function useSocialPlatform(session, sendSocket) {
     recordActivity,
     likePost,
     toggleFollow,
+    toggleSave,
     createPost,
     submitComment,
     likeComment,

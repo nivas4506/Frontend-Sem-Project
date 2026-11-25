@@ -109,7 +109,7 @@ export function AuthView({
       <header className="auth-header">
         <div className="brand">
           <img src={logoImg} alt="Platform Logo" className="brand-logo" />
-          <span className="auth-brand-name">Social Connectivity Platform</span>
+          <span className="auth-brand-name">SocialConnect</span>
         </div>
         <div className="row">
           <button
@@ -327,7 +327,7 @@ export function AuthView({
         <p>
           <Icon name="lock" size={13} /> Local account & OAuth flow demo
         </p>
-        <small>Social Connectivity Platform · React & Vite</small>
+        <small>SocialConnect · React & Vite</small>
       </footer>
     </>
   );

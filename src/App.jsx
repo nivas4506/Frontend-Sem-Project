@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { startBackground } from './background';
 import { readStored } from './utils/ui';
 import { toast } from './utils/toast';
-import { contacts } from './data';
+import { contacts, creators, stories, trending } from './data';
 
 import { useAuth } from './hooks/useAuth';
 import { useSocket } from './hooks/useSocket';
@@ -44,6 +44,7 @@ export default function App() {
   const [background, setBackgroundMode] = useState(() => readStored('scp_background', 'fibers'));
   const [dialogType, setDialogType] = useState('');
   const [dialogData, setDialogData] = useState({});
+  const [seenNotificationCount, setSeenNotificationCount] = useState(0);
 
   const backgroundSetterRef = useRef(null);
   const typingTimerRef = useRef(null);
@@ -208,6 +209,7 @@ export default function App() {
     saveState,
     likePost,
     toggleFollow,
+    toggleSave,
     createPost,
     submitComment,
     likeComment,
@@ -244,6 +246,7 @@ export default function App() {
       result = await signIn(formData.email, formData.password, portalMode);
     }
     resetStateForUser(result.user);
+    setSeenNotificationCount(0);
     toast(`Welcome, ${result.user.name}!`, 'success');
   };
 
@@ -251,6 +254,7 @@ export default function App() {
     const result = await completeOAuth(pending.provider, overrides, pending.isSignUp);
     setDialogType('');
     resetStateForUser(result.user);
+    setSeenNotificationCount(0);
     toast(`Welcome, ${result.user.name}!`, 'success');
   };
 
@@ -263,6 +267,7 @@ export default function App() {
     saveState(stateRef.current);
     signOut();
     resetStateForUser(null);
+    setSeenNotificationCount(0);
     setDialogType('');
     toast('You have been signed out.');
   };
@@ -320,34 +325,60 @@ export default function App() {
     sendSocket('typing:stop', { toUserId: partnerId });
   };
 
+  useEffect(() => {
+    if (state.tab === 'notifications') {
+      setSeenNotificationCount(state.notifications.length);
+    }
+  }, [state.tab, state.notifications.length]);
+
   const handleNavigate = (tab) => {
     setDialogType('');
     setState(prev => ({ ...prev, tab }));
     if (tab === 'messages') {
       markMessagesAsRead(state.partnerId);
+    } else if (tab === 'notifications') {
+      setSeenNotificationCount(state.notifications.length);
     }
     window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+
+  const handleFocusComposer = () => {
+    handleNavigate('feed');
+    setTimeout(() => {
+      document.getElementById('post-composer-input')?.focus();
+    }, 100);
   };
 
   const unreadCount = state.messages.filter(
     m => m.toUserId === session?.user?.id && m.status !== 'READ'
   ).length;
+  const unreadNotifications = Math.max(0, state.notifications.length - seenNotificationCount);
 
   if (!session) {
     return (
-      <AuthView
-        authMode={authMode}
-        setAuthMode={setAuthMode}
-        background={background}
-        onToggleBackground={handleToggleBackground}
-        onOpenHelp={() => setDialogType('help')}
-        onOpenOAuth={(provider) => {
-          const pending = createOAuthRequest(provider, authMode === 'signup');
-          setDialogType('oauth');
-          setDialogData({ pendingOAuth: pending });
-        }}
-        onAuthenticate={handleAuthenticate}
-      />
+      <>
+        <AuthView
+          authMode={authMode}
+          setAuthMode={setAuthMode}
+          background={background}
+          onToggleBackground={handleToggleBackground}
+          onOpenHelp={() => setDialogType('help')}
+          onOpenOAuth={(provider) => {
+            const pending = createOAuthRequest(provider, authMode === 'signup');
+            setDialogType('oauth');
+            setDialogData({ pendingOAuth: pending });
+          }}
+          onAuthenticate={handleAuthenticate}
+        />
+        <DialogModal
+          dialogType={dialogType}
+          dialogData={dialogData}
+          onClose={() => setDialogType('')}
+          currentUser={null}
+          onOAuthSubmit={handleOAuthSubmit}
+          onResetSubmit={(email) => requestPasswordReset(email)}
+        />
+      </>
     );
   }
 
@@ -374,12 +405,7 @@ export default function App() {
         user={session.user}
         tab={state.tab}
         onNavigate={handleNavigate}
-        onOpenCreatePost={() => {
-          handleNavigate('feed');
-          setTimeout(() => {
-            document.getElementById('post-composer-input')?.focus();
-          }, 100);
-        }}
+        onOpenCreatePost={handleFocusComposer}
         onOpenMenu={() => {
           setDialogType('menu');
           setDialogData({
@@ -401,21 +427,31 @@ export default function App() {
         onSignOut={handleSignOut}
         socketConnected={socketConnected}
         unreadCount={unreadCount}
+        notificationCount={unreadNotifications}
       >
         {state.tab === 'feed' && (
           <FeedView
             posts={state.posts}
             user={session.user}
             following={state.following}
+            savedPosts={state.saved}
             onFollowToggle={toggleFollow}
             onLike={likePost}
             onComments={handleOpenComments}
             onShare={handleSharePost}
+            onSave={toggleSave}
             onSearchTopic={(tag) => {
               setState(prev => ({ ...prev, searchQuery: tag, tab: 'search' }));
             }}
             onCreatePost={(c, img) => createPost(c, img, socketConnected)}
+            onFocusComposer={handleFocusComposer}
+            onNavigate={handleNavigate}
+            onOpenHelp={() => setDialogType('help')}
             contacts={contacts}
+            creators={creators}
+            stories={stories}
+            trending={trending}
+            events={state.events}
           />
         )}
 
@@ -426,11 +462,16 @@ export default function App() {
             setSearchQuery={(q) => setState(prev => ({ ...prev, searchQuery: q }))}
             posts={state.posts}
             following={state.following}
+            savedPosts={state.saved}
+            currentUserId={session.user.id}
             onFollowToggle={toggleFollow}
             onLike={likePost}
             onComments={handleOpenComments}
             onShare={handleSharePost}
+            onSave={toggleSave}
             contacts={contacts}
+            creators={creators}
+            trending={trending}
           />
         )}
 
@@ -471,6 +512,7 @@ export default function App() {
             user={session.user}
             posts={state.posts}
             following={state.following}
+            savedPosts={state.saved}
             activity={state.activity}
             onEditProfile={() => {
               setDialogType('profile');
@@ -479,12 +521,17 @@ export default function App() {
             onLike={likePost}
             onComments={handleOpenComments}
             onShare={handleSharePost}
+            onSave={toggleSave}
+            onNavigate={handleNavigate}
           />
         )}
 
         {state.tab === 'notifications' && (
           <NotificationsView
             notifications={state.notifications}
+            following={state.following}
+            onFollowToggle={toggleFollow}
+            onNavigate={handleNavigate}
           />
         )}
       </Shell>
@@ -505,12 +552,7 @@ export default function App() {
           setState(prev => ({ ...prev, partnerId, tab: 'messages' }));
           markMessagesAsRead(partnerId);
         }}
-        onCreatePost={() => {
-          handleNavigate('feed');
-          setTimeout(() => {
-            document.getElementById('post-composer-input')?.focus();
-          }, 100);
-        }}
+        onCreatePost={handleFocusComposer}
         onSwitchBackground={handleToggleBackground}
         onSignOut={handleSignOut}
       />
